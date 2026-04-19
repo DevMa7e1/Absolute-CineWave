@@ -2,8 +2,6 @@ sampleRate = 48000
 sampleBits = 16
 sampleMax = 2**sampleBits / 2 - 1
 
-wave = []
-
 class Time:
     def __init__(self, start_seconds: float = 0, start_pcm_frames: int = 0):
         global sampleRate

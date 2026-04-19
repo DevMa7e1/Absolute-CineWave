@@ -1,11 +1,11 @@
 from extras import *
 import math
 
-def sine_wave(freq: int, time: Time, amplitude: float):
+def sine_wave(freq: float, time: Time, amplitude: float):
     if(amplitude <= 1 and amplitude >= 0):
         return int(round(math.sin(mod_or_one(time.pcm_frames(), 1/freq*sampleRate/2) / (1/freq*sampleRate/2) * math.pi), 8) * (sampleMax * amplitude))
 
-def triangle_wave(freq: int, time: Time, amplitude: float):
+def triangle_wave(freq: float, time: Time, amplitude: float):
     if(amplitude <= 1 and amplitude >= 0):
         complete_wave_time = (1/freq)
         full_wave_time = (complete_wave_time/2)
@@ -26,8 +26,14 @@ def triangle_wave(freq: int, time: Time, amplitude: float):
             else:
                 progress = safe_division(wave_time - full_wave_time/2, full_wave_time/2)
                 return int((-1+progress) * sampleMax * amplitude)
+
+def sawtooth_wave(freq: float, time: Time, amplitude: float):
+    complete_wave_time = 1/freq
+    wave_time = time() % complete_wave_time
+    relative_wave_time = wave_time / complete_wave_time
+    return int((relative_wave_time - 0.5) * sampleMax * 2 * amplitude)
                 
-def limit(value: int, limit: int):
+def limit(value: int, limit: float):
     if value > limit * sampleMax:
         return int(limit * sampleMax)
     if value < -limit * sampleMax:
@@ -37,8 +43,7 @@ def limit(value: int, limit: int):
 def amplify(value: int, factor: float):
     return limit(int(value * factor), 1)
 
-def echo(time: Time, difference: Time):
-    global wave
+def echo(wave: list, time: Time, difference: Time):
     if(time.pcm_frames() >= difference.pcm_frames()):
         return wave[time.pcm_frames()-difference.pcm_frames()]
     else:
