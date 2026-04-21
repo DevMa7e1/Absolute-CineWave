@@ -7,6 +7,7 @@ from extras import *
 from threading import Thread
 from functools import partial
 from pathlib import Path
+from time import sleep
 #For debugging purposes
 #import matplotlib.pyplot as plt
 
@@ -18,7 +19,7 @@ pv.start()
 
 time = Time()
 
-def compute_sound(name: str, freq: int):
+def compute_sound(name: str, freq: int, frames: int):
     global sounds
     code = sounds[name][1]
     wave = []
@@ -29,9 +30,9 @@ def compute_sound(name: str, freq: int):
     window.update()
     popup.update()
     time = Time()
-    for i in range(sampleRate * 2):
+    for i in range(frames):
         if i % 1000 == 0:
-            progress = i / (sampleRate * 2)
+            progress = i / (frames)
             info_label.config(text=f"Computing\n[{'='*(int(progress*20)-1)}>{' '*(20-int(progress*20))}]")
             window.update()
             popup.update()
@@ -53,34 +54,39 @@ def compute_sound(name: str, freq: int):
     popup.update()
     return wave
 
-def play_wave(wave: list):
-    global pv
-    pv.write(wave)
-    pv.flush()
-    #Thread(target=pv.flush).start()
-
-def play_sound(name: str):
-    global sounds, frequencies
+def play_sound(name: str, progress_label: tk.Label, pwindow: tk.Toplevel):
+    global sounds, frequencies, pv, tempo
     notes = sounds[name][2]
-    for x in range(len(notes[0])):
-        wave = []
-        for y in range(12):
-            if notes[y][x]:
-                if wave == []:
-                    wave = compute_sound(name, frequencies[11-y])
-                else:
-                    wave2 = compute_sound(name, frequencies[11-y])
-                    for i in range(len(wave)):
-                        wave[i] = limit(wave[i]+wave2[i], 1)
-        if wave != []:
-            play_wave(wave)
-        
+    waves = {}
+    progress_label.config(text="Preparing to compute notes...")
+    pwindow.update()
+    totalprogress = 0
+    for i in notes:
+        if not i[1] in waves.keys():
+            waves[i[1]] = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate))
+        else:
+            wave = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate))
+            for j in range(int(60 / tempo * sampleRate)):
+                waves[i[1]][j] = limit(waves[i[1]][j] + wave[j], 1)
+        totalprogress += 1
+        progress_label.config(text=f"Computed {totalprogress}/{len(notes)}.")
+        pwindow.update()
+    keys = sorted(list(waves.keys()))
+    for i in range(len(keys)):
+        pv.write(waves[keys[i]])
+        Thread(target=pv.flush).start()
+        if(i < len(keys)-1):
+            sleep(60 / tempo * (keys[i+1] - keys[i]))
+        else:
+            sleep(60 / tempo)
 
 sounds = {}
+tempo = 60
 
 def save_code(code_input: tk.Text, name: str):
     global sounds
     code = code_input.get("1.0", "end-1c")
+    code2 = code_input.get("1.0", "end-1c")
     for i in code.split("\n"):
         tabs = 0
         matches = re.match("(.*) ->", i)
@@ -90,7 +96,7 @@ def save_code(code_input: tk.Text, name: str):
     compiled = None
     try:
         compiled = compile(code, name, 'exec')
-        sounds[name] = [code, compiled, sounds[name][2]]
+        sounds[name] = [code2, compiled, sounds[name][2]]
     except Exception as e:
         tkinter.messagebox.showerror("Syntax error", str(e))
 
@@ -130,13 +136,15 @@ def new_sound():
 blue = tk.PhotoImage(file=Path(__file__).parent.absolute().joinpath('blue.png'))
 gray = tk.PhotoImage(file=Path(__file__).parent.absolute().joinpath('gray.png'))
 
-def select_note(x: int, y: int, name:str, button: tk.Button):
+def select_note(x: int, y: int, name: str, button: tk.Button):
     global blue, gray, sounds
-    sounds[name][2][x][y] = not sounds[name][2][x][y]
-    if sounds[name][2][x][y]:
-        button.config(image=blue)
-    else:
+    if (x, y) in sounds[name][2]:
+        sounds[name][2].remove((x, y))
         button.config(image=gray)
+    else:
+        sounds[name][2].append((x, y))
+        button.config(image=blue)
+        
 
 letter_notation = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 frequencies = [261.63, 277.18, 293.66, 311.13, 329.63, 349.23, 369.99, 392, 415.30, 440, 466.16, 493.88]
@@ -145,26 +153,39 @@ def play_window(name: str):
     global notes, blue, gray, sounds
     pwindow = tk.Toplevel()
     pwindow.wm_title("Absolute CineWave: Piano roll")
-    if(sounds[name][2] == []):
-        for i in range(12):
-            sounds[name][2].append([])
-            for j in range(16):
-                sounds[name][2][-1].append(False)
     for x in range(12):
         note_label = tk.Label(pwindow, text=letter_notation[11-x])
         note_label.grid(row=x, column=0)
     for x in range(12):
         for y in range(16):
-            if sounds[name][2][x][y]:
+            if (x, y) in sounds[name][2]:
                 new_button = tk.Button(pwindow, image=blue, padx=4, pady=4)
             else:
                 new_button = tk.Button(pwindow, image=gray, padx=4, pady=4)
             new_button.config(command=partial(select_note, x, y, name, new_button))
             new_button.grid(row=x, column=y+1)
-    play_button = tk.Button(pwindow, text="Play", command=partial(play_sound, name))
+    progress_label = tk.Label(pwindow, text="")
+    play_button = tk.Button(pwindow, text="Play", command=partial(play_sound, name, progress_label, pwindow))
     play_button.grid(row=12, column=0)
-    
+    progress_label.grid(row=12, column=17)
 
+def set_tempo():
+    global tempo_input, tempo
+    try:
+        tempo = float(tempo_input.get())
+    except Exception as e:
+        tkinter.messagebox.showerror("Tempo error", "The value entered is not a number or Python can't process it.")
+        tkinter.messagebox.showerror("Tempo error", str(e))
+
+max_notes = 16
+
+tempo_label = tk.Label(text="Tempo (BPM)")
+tempo_button = tk.Button(text="Set", command=set_tempo)
+tempo_input = tk.Entry()
+tempo_input.insert(10, "60")
 button = tk.Button(window, text="New sound", command=new_sound)
+tempo_label.pack()
+tempo_input.pack()
+tempo_button.pack()
 button.pack()
 window.mainloop()
