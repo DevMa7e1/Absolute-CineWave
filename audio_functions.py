@@ -3,7 +3,7 @@ import math
 
 def sine_wave(freq: float, time: Time, amplitude: float):
     if(amplitude <= 1 and amplitude >= 0):
-        return int(round(math.sin(mod_or_one(time.pcm_frames(), 1/freq*sampleRate/2) / (1/freq*sampleRate/2) * math.pi), 8) * (sampleMax * amplitude))
+        return int(round(math.sin(time.seconds() * freq * 2 * math.pi), 8) * (sampleMax * amplitude))
 
 def triangle_wave(freq: float, time: Time, amplitude: float):
     if(amplitude <= 1 and amplitude >= 0):
@@ -14,18 +14,19 @@ def triangle_wave(freq: float, time: Time, amplitude: float):
         if wave_time < complete_wave_time/2:
             if wave_time < full_wave_time/2:
                 progress = safe_division(wave_time, full_wave_time/2)
-                return int(progress * sampleMax * amplitude)
-            else:
-                progress = safe_division(wave_time - full_wave_time/2, full_wave_time/2)
-                return int((1 - progress) * sampleMax * amplitude)
-        else:
-            wave_time -= full_wave_time
-            if wave_time < full_wave_time/2:
-                progress = safe_division(wave_time, full_wave_time/2)
                 return int((-progress) * sampleMax * amplitude)
             else:
                 progress = safe_division(wave_time - full_wave_time/2, full_wave_time/2)
                 return int((-1+progress) * sampleMax * amplitude)
+        else:
+            wave_time -= full_wave_time
+            if wave_time < full_wave_time/2:
+                progress = safe_division(wave_time, full_wave_time/2)
+                return int(progress * sampleMax * amplitude)
+            else:
+                progress = safe_division(wave_time - full_wave_time/2, full_wave_time/2)
+                return int((1 - progress) * sampleMax * amplitude)
+            
 
 def sawtooth_wave(freq: float, time: Time, amplitude: float):
     complete_wave_time = 1/freq

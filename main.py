@@ -1,4 +1,5 @@
 import tkinter as tk
+import tkinter.filedialog
 import tkinter.messagebox
 import pvspeaker
 import re
@@ -8,6 +9,8 @@ from threading import Thread
 from functools import partial
 from pathlib import Path
 from time import sleep
+import wave
+import array
 #For debugging purposes
 #import matplotlib.pyplot as plt
 
@@ -177,15 +180,90 @@ def set_tempo():
         tkinter.messagebox.showerror("Tempo error", "The value entered is not a number or Python can't process it.")
         tkinter.messagebox.showerror("Tempo error", str(e))
 
-max_notes = 16
+def play_all(progress_label: tk.Label):
+    global sounds, frequencies, pv, tempo, window
+    waves = {}
+    totalprogress = 0
+    total = 0
+    for i in sounds.keys():
+        total += len(sounds[i][2])
+    for sound in sounds.keys():
+        name = sound
+        notes = sounds[name][2]
+        window.update()
+        for i in notes:
+            if not i[1] in waves.keys():
+                waves[i[1]] = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate))
+            else:
+                wave = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate))
+                for j in range(int(60 / tempo * sampleRate)):
+                    waves[i[1]][j] = limit(waves[i[1]][j] + wave[j], 1)
+            totalprogress += 1
+            progress_label.config(text=f"Computed {totalprogress}/{total}.")
+            window.update()
+    keys = sorted(list(waves.keys()))
+    for i in range(len(keys)):
+        pv.write(waves[keys[i]])
+        Thread(target=pv.flush).start()
+        if(i < len(keys)-1):
+            sleep(60 / tempo * (keys[i+1] - keys[i]))
+        else:
+            sleep(60 / tempo)
+
+def export_all(progress_label: tk.Label):
+    global sounds, frequencies, pv, tempo, window
+    waves = {}
+    totalprogress = 0
+    total = 0
+    for i in sounds.keys():
+        total += len(sounds[i][2])
+    for sound in sounds.keys():
+        name = sound
+        notes = sounds[name][2]
+        window.update()
+        for i in notes:
+            if not i[1] in waves.keys():
+                waves[i[1]] = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate))
+            else:
+                wave1 = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate))
+                for j in range(int(60 / tempo * sampleRate)):
+                    waves[i[1]][j] = limit(waves[i[1]][j] + wave1[j], 1)
+            totalprogress += 1
+            progress_label.config(text=f"Computed {totalprogress}/{total}.")
+            window.update()
+    keys = sorted(list(waves.keys()))
+    data = array.array('h')
+    for i in range(len(keys)):
+        for j in waves[keys[i]]:
+            data.append(j)
+        if i < len(keys)-1:
+            for j in range((keys[i+1] - keys[i] - 1) * sampleRate):
+                data.append(0)
+    filename = tkinter.filedialog.asksaveasfilename(initialdir = "/",
+                                          title = "Export audio",
+                                          filetypes = (("WAV audio file",
+                                                        "*.wav"),))
+
+    encoder = wave.open(filename, 'wb')
+    encoder.setnchannels(1)
+    encoder.setsampwidth(4)
+    encoder.setframerate(sampleRate/2)
+    encoder.writeframes(data)
+    encoder.close()
 
 tempo_label = tk.Label(text="Tempo (BPM)")
 tempo_button = tk.Button(text="Set", command=set_tempo)
 tempo_input = tk.Entry()
 tempo_input.insert(10, "60")
 button = tk.Button(window, text="New sound", command=new_sound)
+progress_label = tk.Label()
+play_all_button = tk.Button(window, text="Play all", command=partial(play_all, progress_label))
+export_button = tk.Button(window, text="Export all", command=partial(export_all, progress_label))
 tempo_label.pack()
 tempo_input.pack()
 tempo_button.pack()
 button.pack()
+play_all_button.pack()
+export_button.pack()
+progress_label.pack()
 window.mainloop()
