@@ -11,6 +11,7 @@ from pathlib import Path
 from time import sleep
 import wave
 import array
+import dill
 #For debugging purposes
 #import matplotlib.pyplot as plt
 
@@ -44,10 +45,35 @@ def compute_sound(name: str, freq: int, frames: int, progress_window: tk.Topleve
     #input(">")
     return wave
 
+def interpolate_between_notes(frames: int, waves: dict):
+    keys = sorted(list(waves.keys()))
+    for i in range(len(keys)-1):
+        wave1 = waves[keys[i]]
+        wave2 = waves[keys[i+1]]
+        linear = LinearInterpolator(wave1[len(wave1)-frames], wave2[0], frames)
+        for j in range(frames, 0, -1):
+            wave1[len(wave1)-j] = int(linear(frames-j))
+    return waves
+
+def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.Toplevel, waves: dict = {}, progress_label = None):
+    global sounds, frequencies, tempo
+    notes = sounds[name][2]
+    totalprogress = 0
+    for i in notes:
+        if not i[1] in waves.keys():
+            waves[i[1]] = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate), pwindow, progress_label2)
+        else:
+            wave = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate), pwindow, progress_label2)
+            for j in range(int(60 / tempo * sampleRate)):
+                waves[i[1]][j] = limit(waves[i[1]][j] + wave[j], 1)
+        totalprogress += 1
+        if progress_label:
+            progress_label.config(text=f"Computed {totalprogress}/{len(notes)}.")
+    waves = interpolate_between_notes(sampleRate//100, waves)
+    return waves
+
 def play_sound(name: str):
     global sounds, frequencies, pv, tempo
-    notes = sounds[name][2]
-    waves = {}
     pwindow = tk.Toplevel()
     pwindow.minsize(200, 75)
     pwindow.maxsize(200, 75)
@@ -58,19 +84,8 @@ def play_sound(name: str):
     progress_label2.pack()
     progress_label.config(text="Preparing to compute notes...")
     pwindow.update()
-    totalprogress = 0
-    for i in notes:
-        if not i[1] in waves.keys():
-            waves[i[1]] = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate), pwindow, progress_label2)
-        else:
-            wave = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate), pwindow, progress_label2)
-            for j in range(int(60 / tempo * sampleRate)):
-                waves[i[1]][j] = limit(waves[i[1]][j] + wave[j], 1)
-        totalprogress += 1
-        progress_label.config(text=f"Computed {totalprogress}/{len(notes)}.")
-        pwindow.update()
-    pwindow.destroy()
-    window.update()
+    waves = {}
+    waves = standard_sound_processing(name, progress_label2, pwindow, {}, progress_label)
     keys = sorted(list(waves.keys()))
     for i in range(len(keys)):
         pv.write(waves[keys[i]])
@@ -79,6 +94,7 @@ def play_sound(name: str):
             sleep(60 / tempo * (keys[i+1] - keys[i]))
         else:
             sleep(60 / tempo)
+    pwindow.destroy()
 
 sounds = {}
 tempo = 60
@@ -112,10 +128,14 @@ def open_sound(name: str):
     play_button.pack()
 
 def create_sound(name: str):
-    global sounds
+    global sounds, current_column, current_row
+    current_column += 1
+    if(current_column >= 3):
+        current_column = 0
+        current_row += 1
     sounds[name] = ["", None, []]
     new_button = tk.Button(window, text=name, command=partial(open_sound, name))
-    new_button.pack()
+    new_button.grid(column=current_column, row=current_row)
 
 def fancy_text_getter_and_passer(name_input: tk.Text, window: tk.Toplevel):
     name = name_input.get("1.0", "end-1c")
@@ -158,10 +178,10 @@ def forwards(buttonself: tk.Button, buttons, pwindow: tk.Toplevel, poslabel: tk.
         for y in range(16):
             if (x, y+position) in sounds[name][2]:
                 new_button = tk.Button(pwindow, image=blue, padx=4, pady=4)
-                buttons.append(button)
+                buttons.append(new_button)
             else:
                 new_button = tk.Button(pwindow, image=gray, padx=4, pady=4)
-                buttons.append(button)
+                buttons.append(new_button)
             new_button.config(command=partial(select_note, x, y+position, name, new_button))
             new_button.grid(row=x, column=y+1)
     buttonself.config(command=partial(forwards, buttonself, buttons, pwindow, poslabel, name))
@@ -174,10 +194,10 @@ def backwards(buttonself: tk.Button, buttons, pwindow: tk.Toplevel, poslabel: tk
             for y in range(16):
                 if (x, y+position) in sounds[name][2]:
                     new_button = tk.Button(pwindow, image=blue, padx=4, pady=4)
-                    buttons.append(button)
+                    buttons.append(new_button)
                 else:
                     new_button = tk.Button(pwindow, image=gray, padx=4, pady=4)
-                    buttons.append(button)
+                    buttons.append(new_button)
                 new_button.config(command=partial(select_note, x, y+position, name, new_button))
                 new_button.grid(row=x, column=y+1)
     buttonself.config(command=partial(backwards, buttonself, buttons, pwindow, poslabel, name))
@@ -195,10 +215,10 @@ def play_window(name: str):
         for y in range(16):
             if (x+position, y) in sounds[name][2]:
                 new_button = tk.Button(pwindow, image=blue, padx=4, pady=4)
-                buttons.append(button)
+                buttons.append(new_button)
             else:
                 new_button = tk.Button(pwindow, image=gray, padx=4, pady=4)
-                buttons.append(button)
+                buttons.append(new_button)
             new_button.config(command=partial(select_note, x+position, y, name, new_button))
             new_button.grid(row=x, column=y+1)
     play_button = tk.Button(pwindow, text="Play", command=partial(play_sound, name))
@@ -236,20 +256,11 @@ def play_all():
     total = 0
     for i in sounds.keys():
         total += len(sounds[i][2])
-    for sound in sounds.keys():
-        name = sound
-        notes = sounds[name][2]
-        window.update()
-        for i in notes:
-            if not i[1] in waves.keys():
-                waves[i[1]] = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate), pwindow, progress_label2)
-            else:
-                wave = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate), pwindow, progress_label2)
-                for j in range(int(60 / tempo * sampleRate)):
-                    waves[i[1]][j] = limit(waves[i[1]][j] + wave[j], 1)
-            totalprogress += 1
-            progress_label.config(text=f"Computed {totalprogress}/{total}.")
-            pwindow.update()
+    for name in sounds.keys():
+        waves = standard_sound_processing(name, progress_label2, pwindow, waves)
+        totalprogress += 1
+        progress_label.config(text=f"Computed {totalprogress}/{total}.")
+        pwindow.update()
     pwindow.destroy()
     window.update()
     keys = sorted(list(waves.keys()))
@@ -277,20 +288,12 @@ def export_all():
     total = 0
     for i in sounds.keys():
         total += len(sounds[i][2])
-    for sound in sounds.keys():
-        name = sound
-        notes = sounds[name][2]
+    for name in sounds.keys():
         window.update()
-        for i in notes:
-            if not i[1] in waves.keys():
-                waves[i[1]] = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate), pwindow, progress_label2)
-            else:
-                wave1 = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate), pwindow, progress_label2)
-                for j in range(int(60 / tempo * sampleRate)):
-                    waves[i[1]][j] = limit(waves[i[1]][j] + wave1[j], 1)
-            totalprogress += 1
-            progress_label.config(text=f"Computed {totalprogress}/{total}.")
-            pwindow.update()
+        waves = standard_sound_processing(name, progress_label2, pwindow, waves)
+        totalprogress += 1
+        progress_label.config(text=f"Computed {totalprogress}/{total}.")
+        pwindow.update()
     pwindow.destroy()
     window.update()
     keys = sorted(list(waves.keys()))
@@ -313,19 +316,63 @@ def export_all():
     encoder.writeframes(data)
     encoder.close()
 
+def save_project():
+    global sounds, tempo
+    filename = tkinter.filedialog.asksaveasfilename(initialdir = "/",
+                                          title = "Save your project",
+                                          filetypes = (("Absolute CineWave project",
+                                                        "*.acwproj"),))
+    file = open(filename, 'wb')
+    dill.dump((sounds, tempo), file)
+    file.close()
+
+def load_project():
+    global sounds, tempo, current_column, current_row, tempo_input
+    filename = tkinter.filedialog.askopenfilename(initialdir = "/",
+                                          title = "Save your project",
+                                          filetypes = (("Absolute CineWave project",
+                                                        "*.acwproj"),))
+    file = open(filename, 'rb')
+    sounds, tempo = dill.load(file)
+    file.close()
+    for i in sounds.keys():
+        current_column += 1
+        if(current_column >= 3):
+            current_column = 0
+            current_row += 1
+        new_button = tk.Button(window, text=i, command=partial(open_sound, i))
+        new_button.grid(column=current_column, row=current_row)
+    tempo_input.delete(0, tk.END)
+    tempo_input.insert(10, str(tempo))
+
+current_row = 4
+current_column = -1
+
 tempo_label = tk.Label(text="Tempo (BPM)")
 tempo_button = tk.Button(text="Set", command=set_tempo)
-tempo_input = tk.Entry()
+tempo_input = tk.Entry(width=5)
 tempo_input.insert(10, "60")
-button = tk.Button(window, text="New sound", command=new_sound)
+
+new_sound_button = tk.Button(window, text="New sound", command=new_sound)
 progress_label = tk.Label()
 play_all_button = tk.Button(window, text="Play all", command=partial(play_all))
 export_button = tk.Button(window, text="Export all", command=partial(export_all))
-tempo_label.pack()
-tempo_input.pack()
-tempo_button.pack()
-button.pack()
-play_all_button.pack()
-export_button.pack()
-progress_label.pack()
+
+save_project_button = tk.Button(text="Save project", command=save_project)
+load_project_button = tk.Button(text="Load project", command=load_project)
+
+spacer = tk.Label(text=" ")
+
+tempo_label.grid(column=0, row=0)
+tempo_input.grid(column=1, row=0)
+tempo_button.grid(column=2, row=0)
+
+new_sound_button.grid(column=0, row=1)
+play_all_button.grid(column=1, row=1)
+export_button.grid(column=2, row=1)
+
+save_project_button.grid(column=0, row=2)
+load_project_button.grid(column=2, row=2)
+
+spacer.grid(row=3, column=0)
 window.mainloop()
