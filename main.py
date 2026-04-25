@@ -55,6 +55,45 @@ def interpolate_between_notes(frames: int, waves: dict):
             wave1[len(wave1)-j] = int(linear(frames-j))
     return waves
 
+def remove_frames_until_perfect_transition(frames: int, waves: dict):
+    keys = sorted(list(waves.keys()))
+    for i in range(len(keys)-1):
+        wave1: list = waves[keys[i]]
+        wave2: list = waves[keys[i+1]]
+        wave1sect = sorted(wave1[len(wave1)-frames//2-1:])
+        wave2sect = sorted(wave2[:frames//2])
+        it1, it2 = 0, 0
+        val1, val2 = 0, 0
+        closest = 1000000
+        while(it1 < len(wave1sect) and it2 < len(wave2sect)):
+            if(wave1sect[it1] > wave2sect[it2]):
+                it2 += 1
+            if(wave1sect[it1] < wave2sect[it2]):
+                it1 += 1
+            if(wave1sect[it1] == wave2sect[it2]):
+                closest = 0
+                val1, val2 = wave1sect[it1], wave2sect[it2]
+                break
+            if(abs(wave1sect[it1] - wave2sect[it2]) < closest):
+                val1, val2 = wave1sect[it1], wave2sect[it2]
+                closest = abs(wave1sect[it1] - wave2sect[it2])
+        index, index2 = len(wave1) - wave1[::-1].index(val1, 0, frames//2), wave2.index(val2, 0, frames//2)
+        waves[keys[i]] = waves[keys[i]][:index]
+        waves[keys[i+1]] = waves[keys[i+1]][index2:]
+    return waves
+
+def play_waves_with_big_buffer(waves: dict):
+    global sampleRate, pv
+    buffer = []
+    keys = sorted(list(waves.keys()))
+    for i in range(len(keys)):
+        buffer += waves[keys[i]]
+        if(i < len(keys)-1):
+            buffer += [0] * int(60 / tempo * (keys[i+1] - keys[i]) * sampleRate)
+    chunk = 0
+    while chunk * 20 * sampleRate < len(buffer):
+        pv.write(buffer[chunk * 20 * sampleRate:min(len(buffer)-chunk * 20 * sampleRate, (chunk+1) * 20 * sampleRate)])
+        pv.flush()
 def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.Toplevel, waves: dict = {}, progress_label = None):
     global sounds, frequencies, tempo
     notes = sounds[name][2]
@@ -69,7 +108,7 @@ def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.
         totalprogress += 1
         if progress_label:
             progress_label.config(text=f"Computed {totalprogress}/{len(notes)}.")
-    waves = interpolate_between_notes(sampleRate//100, waves)
+    waves = remove_frames_until_perfect_transition(sampleRate//100, waves)
     return waves
 
 def play_sound(name: str):
@@ -86,14 +125,7 @@ def play_sound(name: str):
     pwindow.update()
     waves = {}
     waves = standard_sound_processing(name, progress_label2, pwindow, {}, progress_label)
-    keys = sorted(list(waves.keys()))
-    for i in range(len(keys)):
-        pv.write(waves[keys[i]])
-        Thread(target=pv.flush).start()
-        if(i < len(keys)-1):
-            sleep(60 / tempo * (keys[i+1] - keys[i]))
-        else:
-            sleep(60 / tempo)
+    play_waves_with_big_buffer(waves)
     pwindow.destroy()
 
 sounds = {}
