@@ -88,27 +88,71 @@ def play_waves_with_big_buffer(waves: dict):
     keys = sorted(list(waves.keys()))
     for i in range(len(keys)):
         buffer += waves[keys[i]]
-        if(i < len(keys)-1):
-            buffer += [0] * int(60 / tempo * (keys[i+1] - keys[i]) * sampleRate)
+        if i < len(keys)-1:
+            buffer += [buffer[-1]] * int(60 / tempo * (keys[i+1] - keys[i] - 1) * sampleRate)
     chunk = 0
+    chunks = []
     while chunk * 20 * sampleRate < len(buffer):
-        pv.write(buffer[chunk * 20 * sampleRate:min(len(buffer)-chunk * 20 * sampleRate, (chunk+1) * 20 * sampleRate)])
+        pvchunk = buffer[chunk * 20 * sampleRate:chunk * 20 * sampleRate + min(len(buffer)-chunk * 20 * sampleRate, 20 * sampleRate)]
+        chunks.append(pvchunk)
+        chunk += 1
+    for i in range(len(chunks)):
+        pv.write(chunks[i])
         pv.flush()
+
+def process_config(text: str):
+    config = {}
+    for i in text.split('\n'):
+        if i.count(':') == 1:
+            config[i.split(':')[0]] = i.split(':')[1]
+    return config
+
 def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.Toplevel, waves: dict = {}, progress_label = None):
     global sounds, frequencies, tempo
     notes = sounds[name][2]
+    config = process_config(sounds[name][3])
+    adjusted_tempo = False
+    new_tempo = tempo
+    tempos = {}
+    if 'tempo' in config.keys():
+        adjusted_tempo = True
+        for i in config['tempo'].replace(' ', '').split(','):
+            where = int(i.split('>')[0])
+            what = int(i.split('>')[1])
+            tempos[where] = what
+
     totalprogress = 0
     for i in notes:
+
+        if adjusted_tempo:
+            for where in sorted(tempos.keys()):
+                if where > i[1]:
+                    break
+                else:
+                    new_tempo = tempos[where]
+                    
         if not i[1] in waves.keys():
-            waves[i[1]] = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate), pwindow, progress_label2)
+            waves[i[1]] = compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * sampleRate), pwindow, progress_label2)
         else:
-            wave = compute_sound(name, frequencies[11-i[0]], int(60 / tempo * sampleRate), pwindow, progress_label2)
+            wave = compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * sampleRate), pwindow, progress_label2)
             for j in range(int(60 / tempo * sampleRate)):
                 waves[i[1]][j] = limit(waves[i[1]][j] + wave[j], 1)
         totalprogress += 1
+        
         if progress_label:
             progress_label.config(text=f"Computed {totalprogress}/{len(notes)}.")
-    waves = remove_frames_until_perfect_transition(sampleRate//100, waves)
+    if 'transition_seconds' in config.keys():
+        frames = int(float(config['transition_seconds'])*sampleRate)
+    else:
+        frames = sampleRate//100
+    if 'transition' in config.keys() and config['transition'] == 'interpolate':
+        waves = interpolate_between_notes(sampleRate//100, waves)
+    elif 'transition' in config.keys() and config['transition'] == 'remove':
+        waves = remove_frames_until_perfect_transition(sampleRate//100, waves)
+    elif 'transition' in config.keys() and config['transition'] == 'none':
+        pass
+    else:
+        waves = remove_frames_until_perfect_transition(sampleRate//100, waves)
     return waves
 
 def play_sound(name: str):
@@ -125,8 +169,8 @@ def play_sound(name: str):
     pwindow.update()
     waves = {}
     waves = standard_sound_processing(name, progress_label2, pwindow, {}, progress_label)
-    play_waves_with_big_buffer(waves)
     pwindow.destroy()
+    play_waves_with_big_buffer(waves)
 
 sounds = {}
 tempo = 60
@@ -144,9 +188,15 @@ def save_code(code_input: tk.Text, name: str):
     compiled = None
     try:
         compiled = compile(code, name, 'exec')
-        sounds[name] = [code2, compiled, sounds[name][2]]
+        sounds[name][0] = code2 
+        sounds[name][1] = compiled
     except Exception as e:
         tkinter.messagebox.showerror("Syntax error", str(e))
+
+def save_config(config_input: tk.Text, name: str):
+    global sounds
+    config = config_input.get("1.0", "end-1c")
+    sounds[name][3] = config
 
 def open_sound(name: str):
     sound_window = tk.Toplevel()
@@ -165,7 +215,7 @@ def create_sound(name: str):
     if(current_column >= 3):
         current_column = 0
         current_row += 1
-    sounds[name] = ["", None, []]
+    sounds[name] = ["", None, [], '']
     new_button = tk.Button(window, text=name, command=partial(open_sound, name))
     new_button.grid(column=current_column, row=current_row)
 
@@ -187,6 +237,7 @@ def new_sound():
 
 blue = tk.PhotoImage(file=Path(__file__).parent.absolute().joinpath('blue.png'))
 gray = tk.PhotoImage(file=Path(__file__).parent.absolute().joinpath('gray.png'))
+cog = tk.PhotoImage(file=Path(__file__).parent.absolute().joinpath('cog.png'))
 
 def select_note(x: int, y: int, name: str, button: tk.Button):
     global blue, gray, sounds
@@ -234,6 +285,15 @@ def backwards(buttonself: tk.Button, buttons, pwindow: tk.Toplevel, poslabel: tk
                 new_button.grid(row=x, column=y+1)
     buttonself.config(command=partial(backwards, buttonself, buttons, pwindow, poslabel, name))
 
+def sound_config(name: str):
+    global sounds
+    cwindow = tk.Toplevel()
+    config_input = tk.Text(cwindow, height=6, width=25)
+    config_input.pack()
+    config_input.insert(tk.END, sounds[name][3])
+    save_button = tk.Button(cwindow, text="Save", command=partial(save_config, config_input, name))
+    save_button.pack()
+
 def play_window(name: str):
     global notes, blue, gray, sounds
     position = 0
@@ -255,13 +315,19 @@ def play_window(name: str):
             new_button.grid(row=x, column=y+1)
     play_button = tk.Button(pwindow, text="Play", command=partial(play_sound, name))
     position_label = tk.Label(pwindow, text="0")
+    
     forwards_button = tk.Button(pwindow, text=">")
     forwards_button.config(command=partial(forwards, forwards_button, buttons, pwindow, position_label, name))
+    
     backwards_button = tk.Button(pwindow, text="<")
     backwards_button.config(command=partial(backwards, backwards_button, buttons, pwindow, position_label, name))
+    
+    config_button = tk.Button(pwindow, image=cog, command=partial(sound_config, name))
+    
     play_button.grid(row=12, column=0)
     forwards_button.grid(row=12, column=2)
     backwards_button.grid(row=12, column=1)
+    config_button.grid(row=12, column=3)
     position_label.grid(row=12, column=17)
 
 def set_tempo():
@@ -340,13 +406,13 @@ def export_all():
                                           title = "Export audio",
                                           filetypes = (("WAV audio file",
                                                         "*.wav"),))
-
-    encoder = wave.open(filename, 'wb')
-    encoder.setnchannels(1)
-    encoder.setsampwidth(4)
-    encoder.setframerate(sampleRate/2)
-    encoder.writeframes(data)
-    encoder.close()
+    if type(filename) != tuple and filename != '':
+        encoder = wave.open(filename, 'wb')
+        encoder.setnchannels(1)
+        encoder.setsampwidth(4)
+        encoder.setframerate(sampleRate/2)
+        encoder.writeframes(data)
+        encoder.close()
 
 def save_project():
     global sounds, tempo
@@ -354,9 +420,10 @@ def save_project():
                                           title = "Save your project",
                                           filetypes = (("Absolute CineWave project",
                                                         "*.acwproj"),))
-    file = open(filename, 'wb')
-    dill.dump((sounds, tempo), file)
-    file.close()
+    if type(filename) != tuple:
+        file = open(filename, 'wb')
+        dill.dump((sounds, tempo), file)
+        file.close()
 
 def load_project():
     global sounds, tempo, current_column, current_row, tempo_input
@@ -364,18 +431,19 @@ def load_project():
                                           title = "Save your project",
                                           filetypes = (("Absolute CineWave project",
                                                         "*.acwproj"),))
-    file = open(filename, 'rb')
-    sounds, tempo = dill.load(file)
-    file.close()
-    for i in sounds.keys():
-        current_column += 1
-        if(current_column >= 3):
-            current_column = 0
-            current_row += 1
-        new_button = tk.Button(window, text=i, command=partial(open_sound, i))
-        new_button.grid(column=current_column, row=current_row)
-    tempo_input.delete(0, tk.END)
-    tempo_input.insert(10, str(tempo))
+    if type(filename) != tuple and filename != '':
+        file = open(filename, 'rb')
+        sounds, tempo = dill.load(file)
+        file.close()
+        for i in sounds.keys():
+            current_column += 1
+            if(current_column >= 3):
+                current_column = 0
+                current_row += 1
+            new_button = tk.Button(window, text=i, command=partial(open_sound, i))
+            new_button.grid(column=current_column, row=current_row)
+        tempo_input.delete(0, tk.END)
+        tempo_input.insert(10, str(tempo))
 
 current_row = 4
 current_column = -1
