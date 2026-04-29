@@ -23,6 +23,8 @@ pv.start()
 
 time = Time()
 
+saved = True
+
 def compute_sound(name: str, freq: int, frames: int, progress_window: tk.Toplevel, progress_label: tk.Label):
     global sounds
     code = sounds[name][1]
@@ -96,14 +98,13 @@ def play_waves_with_big_buffer(waves: dict):
         pvchunk = buffer[chunk * 20 * sampleRate:chunk * 20 * sampleRate + min(len(buffer)-chunk * 20 * sampleRate, 20 * sampleRate)]
         chunks.append(pvchunk)
         chunk += 1
-    for i in range(len(chunks)):
-        pv.write(chunks[i])
-        pv.flush()
+    pv.flush(buffer)
 
 def process_config(text: str):
     config = {}
     for i in text.split('\n'):
         if i.count(':') == 1:
+            i = i.replace(' ', '')
             config[i.split(':')[0]] = i.split(':')[1]
     return config
 
@@ -115,11 +116,13 @@ def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.
     new_tempo = tempo
     tempos = {}
     if 'tempo' in config.keys():
+        config["tempo"] = config["tempo"].split(",")
         adjusted_tempo = True
-        for i in config['tempo'].replace(' ', '').split(','):
-            where = int(i.split('>')[0])
-            what = int(i.split('>')[1])
-            tempos[where] = what
+        for i in config['tempo']:
+            if(len(i.split('>')) == 2):
+                where = int(i.split('>')[0])
+                what = int(i.split('>')[1])
+                tempos[where] = what
 
     totalprogress = 0
     for i in notes:
@@ -146,13 +149,13 @@ def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.
     else:
         frames = sampleRate//100
     if 'transition' in config.keys() and config['transition'] == 'interpolate':
-        waves = interpolate_between_notes(sampleRate//100, waves)
+        waves = interpolate_between_notes(frames, waves)
     elif 'transition' in config.keys() and config['transition'] == 'remove':
-        waves = remove_frames_until_perfect_transition(sampleRate//100, waves)
+        waves = remove_frames_until_perfect_transition(frames, waves)
     elif 'transition' in config.keys() and config['transition'] == 'none':
         pass
     else:
-        waves = remove_frames_until_perfect_transition(sampleRate//100, waves)
+        waves = remove_frames_until_perfect_transition(frames, waves)
     return waves
 
 def play_sound(name: str):
@@ -175,8 +178,9 @@ def play_sound(name: str):
 sounds = {}
 tempo = 60
 
-def save_code(code_input: tk.Text, name: str):
-    global sounds
+def save_code(code_input: tk.Text, name: str, close_window: bool = False, sound_window: tk.Toplevel = None): # type: ignore
+    global sounds, saved
+    saved = False
     code = code_input.get("1.0", "end-1c")
     code2 = code_input.get("1.0", "end-1c")
     for i in code.split("\n"):
@@ -190,11 +194,16 @@ def save_code(code_input: tk.Text, name: str):
         compiled = compile(code, name, 'exec')
         sounds[name][0] = code2 
         sounds[name][1] = compiled
+        if close_window:
+            sound_window.destroy()
+        else:
+            play_window(name)
     except Exception as e:
         tkinter.messagebox.showerror("Syntax error", str(e))
 
 def save_config(config_input: tk.Text, name: str):
-    global sounds
+    global sounds, saved
+    saved = False
     config = config_input.get("1.0", "end-1c")
     sounds[name][3] = config
 
@@ -203,14 +212,16 @@ def open_sound(name: str):
     sound_window.wm_title(f"{name}: Absolute CineWave")
     code_input = tk.Text(sound_window)
     code_input.insert(tk.END, sounds[name][0])
-    save_button = tk.Button(sound_window, text="Save", command=partial(save_code, code_input, name))
-    play_button = tk.Button(sound_window, text="Open Piano Roll", command=partial(play_window, name))
+
+    sound_window.protocol("WM_DELETE_WINDOW", partial(save_code, code_input, name, True, sound_window))
+
+    play_button = tk.Button(sound_window, text="Open Piano Roll", command=partial(save_code, code_input, name)) # type: ignore
     code_input.pack()
-    save_button.pack()
     play_button.pack()
 
 def create_sound(name: str):
-    global sounds, current_column, current_row
+    global sounds, current_column, current_row, saved
+    saved = False
     current_column += 1
     if(current_column >= 3):
         current_column = 0
@@ -240,7 +251,8 @@ gray = tk.PhotoImage(file=Path(__file__).parent.absolute().joinpath('gray.png'))
 cog = tk.PhotoImage(file=Path(__file__).parent.absolute().joinpath('cog.png'))
 
 def select_note(x: int, y: int, name: str, button: tk.Button):
-    global blue, gray, sounds
+    global blue, gray, sounds, saved
+    saved = False
     if (x, y) in sounds[name][2]:
         sounds[name][2].remove((x, y))
         button.config(image=gray)
@@ -331,7 +343,8 @@ def play_window(name: str):
     position_label.grid(row=12, column=17)
 
 def set_tempo():
-    global tempo_input, tempo
+    global tempo_input, tempo, saved
+    saved = False
     try:
         tempo = float(tempo_input.get())
     except Exception as e:
@@ -415,35 +428,58 @@ def export_all():
         encoder.close()
 
 def save_project():
-    global sounds, tempo
+    global sounds, tempo, saved
     filename = tkinter.filedialog.asksaveasfilename(initialdir = "/",
                                           title = "Save your project",
                                           filetypes = (("Absolute CineWave project",
                                                         "*.acwproj"),))
-    if type(filename) != tuple:
+    if type(filename) != tuple and filename != '':
         file = open(filename, 'wb')
         dill.dump((sounds, tempo), file)
         file.close()
+        saved = True
+    else:
+        saved = False
 
 def load_project():
-    global sounds, tempo, current_column, current_row, tempo_input
-    filename = tkinter.filedialog.askopenfilename(initialdir = "/",
-                                          title = "Save your project",
-                                          filetypes = (("Absolute CineWave project",
-                                                        "*.acwproj"),))
-    if type(filename) != tuple and filename != '':
-        file = open(filename, 'rb')
-        sounds, tempo = dill.load(file)
-        file.close()
-        for i in sounds.keys():
-            current_column += 1
-            if(current_column >= 3):
-                current_column = 0
-                current_row += 1
-            new_button = tk.Button(window, text=i, command=partial(open_sound, i))
-            new_button.grid(column=current_column, row=current_row)
-        tempo_input.delete(0, tk.END)
-        tempo_input.insert(10, str(tempo))
+    global sounds, tempo, current_column, current_row, tempo_input, saved
+    if not saved:
+        answer = tkinter.messagebox.askyesnocancel("Before you load another project...", "Do you want to save your current project?")
+        if answer:
+            save_project()
+        if answer == False:
+            saved = True
+    if saved:
+        filename = tkinter.filedialog.askopenfilename(initialdir = "/",
+                                              title = "Save your project",
+                                              filetypes = (("Absolute CineWave project",
+                                                            "*.acwproj"),))
+        if type(filename) != tuple and filename != '':
+            file = open(filename, 'rb')
+            sounds, tempo = dill.load(file)
+            file.close()
+            for i in sounds.keys():
+                current_column += 1
+                if(current_column >= 3):
+                    current_column = 0
+                    current_row += 1
+                new_button = tk.Button(window, text=i, command=partial(open_sound, i))
+                new_button.grid(column=current_column, row=current_row)
+            tempo_input.delete(0, tk.END)
+            tempo_input.insert(10, str(tempo))
+
+def check_if_saved_then_close():
+    global saved, window
+    if not saved:
+        answer = tkinter.messagebox.askyesnocancel("Before you go...", "Do you want to save your project?")
+        if answer:
+            save_project()
+        if answer == False:
+            window.destroy()
+    else:
+        window.destroy()
+
+window.protocol("WM_DELETE_WINDOW", check_if_saved_then_close)
 
 current_row = 4
 current_column = -1
