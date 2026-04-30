@@ -1,7 +1,7 @@
 from typing import Any
 
 sampleRate = 48000
-sampleBits = 16
+sampleBits = 32
 sampleMax = 2**sampleBits / 2 - 1
 
 class Time:

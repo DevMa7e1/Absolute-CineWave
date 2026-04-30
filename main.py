@@ -1,7 +1,7 @@
 import tkinter as tk
 import tkinter.filedialog
 import tkinter.messagebox
-import pvspeaker
+import pyaudio
 import re
 from audio_functions import *
 from extras import *
@@ -12,14 +12,21 @@ from time import sleep
 import wave
 import array
 import dill
+from time import time as cur_time
 #For debugging purposes
 #import matplotlib.pyplot as plt
 
 window = tk.Tk()
 window.wm_title("Absolute CineWave")
 
-pv = pvspeaker.PvSpeaker(sampleRate, sampleBits)
-pv.start()
+def smart_callback():
+    pass
+
+p = pyaudio.PyAudio()
+out = p.open(format=pyaudio.paInt32,
+                channels=1,
+                rate=sampleRate*2,
+                output=True)
 
 time = Time()
 
@@ -70,8 +77,12 @@ def remove_frames_until_perfect_transition(frames: int, waves: dict):
         while(it1 < len(wave1sect) and it2 < len(wave2sect)):
             if(wave1sect[it1] > wave2sect[it2]):
                 it2 += 1
+                if not (it1 < len(wave1sect) and it2 < len(wave2sect)):
+                    break
             if(wave1sect[it1] < wave2sect[it2]):
                 it1 += 1
+                if not (it1 < len(wave1sect) and it2 < len(wave2sect)):
+                    break
             if(wave1sect[it1] == wave2sect[it2]):
                 closest = 0
                 val1, val2 = wave1sect[it1], wave2sect[it2]
@@ -98,7 +109,29 @@ def play_waves_with_big_buffer(waves: dict):
         pvchunk = buffer[chunk * 20 * sampleRate:chunk * 20 * sampleRate + min(len(buffer)-chunk * 20 * sampleRate, 20 * sampleRate)]
         chunks.append(pvchunk)
         chunk += 1
-    pv.flush(buffer)
+    controls_window = tk.Toplevel()
+    time_label = tk.Label(controls_window, text="Played 0s / 0s")
+    pause_play_button = tk.Button(controls_window, text="Pause/Play")
+    stop_button = tk.Button(controls_window, text="Stop")
+    time_label.grid(column=0, row=0)
+    pause_play_button.grid(column=0, row=1)
+    stop_button.grid(column=1, row=1)
+    total_time = len(buffer) / sampleRate
+    window.update()
+    #start_time = cur_time()
+    #Thread(target = pv.flush, args=[buffer]).start()
+    buffers = []
+    i = 0
+    while i * sampleRate < len(buffer):
+        buffers.append(array.array('l'))
+        singular_buffer = buffer[i * sampleRate : i * sampleRate+min(sampleRate, len(buffer) - i * sampleRate)]
+        for j in singular_buffer:
+            buffers[-1].append(j)
+        buffers[-1] = bytes(buffers[-1])
+        i += 1
+    for i in buffers:
+        out.write(i)
+    controls_window.destroy()
 
 def process_config(text: str):
     config = {}
@@ -374,14 +407,7 @@ def play_all():
         pwindow.update()
     pwindow.destroy()
     window.update()
-    keys = sorted(list(waves.keys()))
-    for i in range(len(keys)):
-        pv.write(waves[keys[i]])
-        Thread(target=pv.flush).start()
-        if(i < len(keys)-1):
-            sleep(60 / tempo * (keys[i+1] - keys[i]))
-        else:
-            sleep(60 / tempo)
+    play_waves_with_big_buffer(waves)
 
 def export_all():
     global sounds, frequencies, pv, tempo, window
