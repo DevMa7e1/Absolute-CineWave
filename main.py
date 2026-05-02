@@ -19,14 +19,12 @@ from time import time as cur_time
 window = tk.Tk()
 window.wm_title("Absolute CineWave")
 
-def smart_callback():
-    pass
-
 p = pyaudio.PyAudio()
 out = p.open(format=pyaudio.paInt32,
                 channels=1,
-                rate=sampleRate*2,
-                output=True)
+                rate=frameRate*2,
+                output=True,
+                frames_per_buffer=bufferSize)
 
 time = Time()
 
@@ -95,42 +93,70 @@ def remove_frames_until_perfect_transition(frames: int, waves: dict):
         waves[keys[i+1]] = waves[keys[i+1]][index2:]
     return waves
 
+playing = True
+stopped = False
+
+def play_pause():
+    global playing
+    playing = not playing
+def stop():
+    global stopped
+    stopped = True
+
 def play_waves_with_big_buffer(waves: dict):
-    global sampleRate, pv
+    global frameRate, playing, stopped
     buffer = []
     keys = sorted(list(waves.keys()))
     for i in range(len(keys)):
         buffer += waves[keys[i]]
         if i < len(keys)-1:
-            buffer += [buffer[-1]] * int(60 / tempo * (keys[i+1] - keys[i] - 1) * sampleRate)
+            buffer += [buffer[-1]] * int(60 / tempo * (keys[i+1] - keys[i] - 1) * frameRate)
     chunk = 0
     chunks = []
-    while chunk * 20 * sampleRate < len(buffer):
-        pvchunk = buffer[chunk * 20 * sampleRate:chunk * 20 * sampleRate + min(len(buffer)-chunk * 20 * sampleRate, 20 * sampleRate)]
+    while chunk * 20 * frameRate < len(buffer):
+        pvchunk = buffer[chunk * 20 * frameRate:chunk * 20 * frameRate + min(len(buffer)-chunk * 20 * frameRate, 20 * frameRate)]
         chunks.append(pvchunk)
         chunk += 1
     controls_window = tk.Toplevel()
     time_label = tk.Label(controls_window, text="Played 0s / 0s")
-    pause_play_button = tk.Button(controls_window, text="Pause/Play")
-    stop_button = tk.Button(controls_window, text="Stop")
+    pause_play_button = tk.Button(controls_window, text="Pause/Play", command=play_pause)
+    stop_button = tk.Button(controls_window, text="Stop", command=stop)
     time_label.grid(column=0, row=0)
     pause_play_button.grid(column=0, row=1)
     stop_button.grid(column=1, row=1)
-    total_time = len(buffer) / sampleRate
     window.update()
-    #start_time = cur_time()
-    #Thread(target = pv.flush, args=[buffer]).start()
-    buffers = []
-    i = 0
-    while i * sampleRate < len(buffer):
-        buffers.append(array.array('l'))
-        singular_buffer = buffer[i * sampleRate : i * sampleRate+min(sampleRate, len(buffer) - i * sampleRate)]
-        for j in singular_buffer:
-            buffers[-1].append(j)
-        buffers[-1] = bytes(buffers[-1])
-        i += 1
-    for i in buffers:
-        out.write(i)
+    abI = 0
+    audio_buffer = []
+    chunks = []
+    total_len = len(buffer)
+    while len(buffer) > 0:
+        if len(buffer) > bufferSize:
+            chunks.append(bytes(array.array('l', buffer[:bufferSize])))
+            buffer = buffer[bufferSize:]
+        else:
+            chunks.append(bytes(array.array('l', buffer + [0] * (bufferSize-len(buffer)))))
+            buffer.clear()
+    buffer2 = []
+    for chunk in chunks:
+        chunk_a = array.array('l', chunk)
+        for i in chunk_a:
+            buffer2.append(i)
+    for i in chunks:
+        audio_buffer.append(i)
+    abL = len(chunks)
+    while abL > abI:
+        controls_window.update()
+        if playing:
+            out.write(audio_buffer[abI])
+        else:
+            while not playing:
+                controls_window.update()
+                sleep(0.1)
+        if stopped:
+            stopped = False
+            break
+        time_label.config(text=f"Played {round(abI*bufferSize/frameRate, 2)}s / {round(total_len/frameRate, 2)}s")
+        abI += 1
     controls_window.destroy()
 
 def process_config(text: str):
@@ -168,19 +194,19 @@ def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.
                     new_tempo = tempos[where]
                     
         if not i[1] in waves.keys():
-            waves[i[1]] = compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * sampleRate), pwindow, progress_label2)
+            waves[i[1]] = compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), pwindow, progress_label2)
         else:
-            wave = compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * sampleRate), pwindow, progress_label2)
-            for j in range(int(60 / tempo * sampleRate)):
+            wave = compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), pwindow, progress_label2)
+            for j in range(int(60 / tempo * frameRate)):
                 waves[i[1]][j] = limit(waves[i[1]][j] + wave[j], 1)
         totalprogress += 1
         
         if progress_label:
             progress_label.config(text=f"Computed {totalprogress}/{len(notes)}.")
     if 'transition_seconds' in config.keys():
-        frames = int(float(config['transition_seconds'])*sampleRate)
+        frames = int(float(config['transition_seconds'])*frameRate)
     else:
-        frames = sampleRate//100
+        frames = frameRate//100
     if 'transition' in config.keys() and config['transition'] == 'interpolate':
         waves = interpolate_between_notes(frames, waves)
     elif 'transition' in config.keys() and config['transition'] == 'remove':
@@ -230,6 +256,7 @@ def save_code(code_input: tk.Text, name: str, close_window: bool = False, sound_
         if close_window:
             sound_window.destroy()
         else:
+            sound_window.destroy()
             play_window(name)
     except Exception as e:
         tkinter.messagebox.showerror("Syntax error", str(e))
@@ -240,7 +267,7 @@ def save_config(config_input: tk.Text, name: str):
     config = config_input.get("1.0", "end-1c")
     sounds[name][3] = config
 
-def open_sound(name: str):
+def open_sound(name: str, destroy_pwindow: bool = False, pwindow: tk.Toplevel = None): # type: ignore
     sound_window = tk.Toplevel()
     sound_window.wm_title(f"{name}: Absolute CineWave")
     code_input = tk.Text(sound_window)
@@ -248,9 +275,12 @@ def open_sound(name: str):
 
     sound_window.protocol("WM_DELETE_WINDOW", partial(save_code, code_input, name, True, sound_window))
 
-    play_button = tk.Button(sound_window, text="Open Piano Roll", command=partial(save_code, code_input, name)) # type: ignore
+    play_button = tk.Button(sound_window, text="Open Piano Roll", command=partial(save_code, code_input, name, sound_window=sound_window)) # type: ignore
     code_input.pack()
     play_button.pack()
+
+    if destroy_pwindow:
+        pwindow.destroy()
 
 def create_sound(name: str):
     global sounds, current_column, current_row, saved
@@ -260,7 +290,7 @@ def create_sound(name: str):
         current_column = 0
         current_row += 1
     sounds[name] = ["", None, [], '']
-    new_button = tk.Button(window, text=name, command=partial(open_sound, name))
+    new_button = tk.Button(window, text=name, command=partial(open_sound, name)) # type: ignore
     new_button.grid(column=current_column, row=current_row)
 
 def fancy_text_getter_and_passer(name_input: tk.Text, window: tk.Toplevel):
@@ -375,6 +405,8 @@ def play_window(name: str):
     config_button.grid(row=12, column=3)
     position_label.grid(row=12, column=17)
 
+    pwindow.protocol("WM_DELETE_WINDOW", partial(open_sound, name, True, pwindow))
+
 def set_tempo():
     global tempo_input, tempo, saved
     saved = False
@@ -439,7 +471,7 @@ def export_all():
         for j in waves[keys[i]]:
             data.append(j)
         if i < len(keys)-1:
-            for j in range((keys[i+1] - keys[i] - 1) * sampleRate):
+            for j in range((keys[i+1] - keys[i] - 1) * frameRate):
                 data.append(0)
     filename = tkinter.filedialog.asksaveasfilename(initialdir = "/",
                                           title = "Export audio",
@@ -449,7 +481,7 @@ def export_all():
         encoder = wave.open(filename, 'wb')
         encoder.setnchannels(1)
         encoder.setsampwidth(4)
-        encoder.setframerate(sampleRate/2)
+        encoder.setframerate(frameRate/2)
         encoder.writeframes(data)
         encoder.close()
 
@@ -489,7 +521,7 @@ def load_project():
                 if(current_column >= 3):
                     current_column = 0
                     current_row += 1
-                new_button = tk.Button(window, text=i, command=partial(open_sound, i))
+                new_button = tk.Button(window, text=i, command=partial(open_sound, i)) # type: ignore
                 new_button.grid(column=current_column, row=current_row)
             tempo_input.delete(0, tk.END)
             tempo_input.insert(10, str(tempo))
