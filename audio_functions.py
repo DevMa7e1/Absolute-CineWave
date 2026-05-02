@@ -1,6 +1,8 @@
 from extras import *
 import math
 
+waveforms = {}
+
 def sine_wave(freq: float, time: Time, amplitude: float):
     if(amplitude <= 1 and amplitude >= 0):
         return int(round(math.sin(time.seconds() * freq * 2 * math.pi), 8) * (frameMax * amplitude))
@@ -49,3 +51,10 @@ def echo(wave: list, time: Time, difference: Time):
         return wave[time.pcm_frames()-difference.pcm_frames()]
     else:
         return 0
+
+def custom(name: str, freq: float, time: Time, amplitude: float):
+    progress = (time() / (1/freq)) % 1
+    waveform = waveforms[name][1]
+    progress_frame = math.floor(progress * len(waveform))
+    print(progress_frame, waveform[progress_frame])
+    return int(waveform[progress_frame] * amplitude)

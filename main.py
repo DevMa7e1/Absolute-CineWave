@@ -5,14 +5,12 @@ import pyaudio
 import re
 from audio_functions import *
 from extras import *
-from threading import Thread
 from functools import partial
 from pathlib import Path
 from time import sleep
 import wave
 import array
 import dill
-from time import time as cur_time
 #For debugging purposes
 #import matplotlib.pyplot as plt
 
@@ -466,7 +464,7 @@ def export_all():
     pwindow.destroy()
     window.update()
     keys = sorted(list(waves.keys()))
-    data = array.array('h')
+    data = array.array('l')
     for i in range(len(keys)):
         for j in waves[keys[i]]:
             data.append(j)
@@ -484,6 +482,35 @@ def export_all():
         encoder.setframerate(frameRate/2)
         encoder.writeframes(data)
         encoder.close()
+
+def convert_to_type_code(size: int) -> str:
+    match size:
+        case 8:
+            return 'b'
+        case 16:
+            return 'h'
+        case 32:
+            return 'l'
+        case 64:
+            return 'q'
+    return 'l'
+
+def import_waveform():
+    filename = tkinter.filedialog.askopenfilename(initialdir = "/",
+                                              title = "Import a custom waveform",
+                                              filetypes = (("WAV file",
+                                                            "*.wav"),))
+    if type(filename) != tuple and filename != '':
+        decoder = wave.open(filename, 'rb')
+        wfrate = decoder.getframerate()
+        wfwidth = decoder.getsampwidth() * 8
+        wfdata = decoder.readframes(decoder.getnframes())
+        if wfwidth == frameBits:
+            native_wfdata = array.array(convert_to_type_code(frameBits), wfdata)
+            waveforms[Path(filename).name] = [wfrate, native_wfdata]
+        else:
+            tkinter.messagebox.showerror('Import error', f'The WAV file you selected has a sample width that differes from the one currently selected \
+for this project ({frameBits}). Please convert your file to a {frameBits} bit WAV file using audio software then try again.')
 
 def save_project():
     global sounds, tempo, saved
@@ -509,7 +536,7 @@ def load_project():
             saved = True
     if saved:
         filename = tkinter.filedialog.askopenfilename(initialdir = "/",
-                                              title = "Save your project",
+                                              title = "Load a project",
                                               filetypes = (("Absolute CineWave project",
                                                             "*.acwproj"),))
         if type(filename) != tuple and filename != '':
@@ -555,6 +582,8 @@ export_button = tk.Button(window, text="Export all", command=partial(export_all)
 save_project_button = tk.Button(text="Save project", command=save_project)
 load_project_button = tk.Button(text="Load project", command=load_project)
 
+custom_ = tk.Button(window, command=import_waveform, text="Add waveform")
+
 spacer = tk.Label(text=" ")
 
 tempo_label.grid(column=0, row=0)
@@ -567,6 +596,8 @@ export_button.grid(column=2, row=1)
 
 save_project_button.grid(column=0, row=2)
 load_project_button.grid(column=2, row=2)
+
+custom_.grid(row=2, column=1)
 
 spacer.grid(row=3, column=0)
 window.mainloop()
