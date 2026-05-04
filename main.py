@@ -101,18 +101,21 @@ def stop():
     global stopped
     stopped = True
 
-def play_waves_with_big_buffer(waves: dict):
-    global frameRate, playing, stopped
-    buffer = []
+def get_raw_frames(waves: dict):
+    wave = []
     keys = sorted(list(waves.keys()))
     for i in range(len(keys)):
-        buffer += waves[keys[i]]
+        wave += waves[keys[i]]
         if i < len(keys)-1:
-            buffer += [buffer[-1]] * int(60 / tempo * (keys[i+1] - keys[i] - 1) * frameRate)
+            wave += [wave[-1]] * int(60 / tempo * (keys[i+1] - keys[i] - 1) * frameRate)
+    return wave
+
+def play_waves_with_big_buffer(wave: list):
+    global frameRate, playing, stopped
     chunk = 0
     chunks = []
-    while chunk * 20 * frameRate < len(buffer):
-        pvchunk = buffer[chunk * 20 * frameRate:chunk * 20 * frameRate + min(len(buffer)-chunk * 20 * frameRate, 20 * frameRate)]
+    while chunk * 20 * frameRate < len(wave):
+        pvchunk = wave[chunk * 20 * frameRate:chunk * 20 * frameRate + min(len(wave)-chunk * 20 * frameRate, 20 * frameRate)]
         chunks.append(pvchunk)
         chunk += 1
     controls_window = tk.Toplevel()
@@ -126,19 +129,14 @@ def play_waves_with_big_buffer(waves: dict):
     abI = 0
     audio_buffer = []
     chunks = []
-    total_len = len(buffer)
-    while len(buffer) > 0:
-        if len(buffer) > bufferSize:
-            chunks.append(bytes(array.array('l', buffer[:bufferSize])))
-            buffer = buffer[bufferSize:]
+    total_len = len(wave)
+    while len(wave) > 0:
+        if len(wave) > bufferSize:
+            chunks.append(bytes(array.array('l', wave[:bufferSize])))
+            wave = wave[bufferSize:]
         else:
-            chunks.append(bytes(array.array('l', buffer + [0] * (bufferSize-len(buffer)))))
-            buffer.clear()
-    buffer2 = []
-    for chunk in chunks:
-        chunk_a = array.array('l', chunk)
-        for i in chunk_a:
-            buffer2.append(i)
+            chunks.append(bytes(array.array('l', wave + [0] * (bufferSize-len(wave)))))
+            wave.clear()
     for i in chunks:
         audio_buffer.append(i)
     abL = len(chunks)
@@ -165,6 +163,19 @@ def process_config(text: str):
             config[i.split(':')[0]] = i.split(':')[1]
     return config
 
+def apply_plugins(name: str, code: str, wave: list):
+    for i in code.split("\n"):
+        tabs = 0
+        matches = re.match("(.*) ->", i)
+        if(matches != None and len(matches.groups())) and not i.startswith('#'):
+            tabs = i.count('\t')
+            code = code.replace(i, f"{'\t'*tabs}wave.clear()\n{'\t'*tabs}for dutvn in {str(matches[1])}: wave.append(dutvn)")
+    try:
+        exec(compile(code, f'{name} plugin code', 'exec'))
+        return wave
+    except Exception as e:
+        tkinter.messagebox.showerror('Plugin computation error', str(e))
+        raise Exception(f"Plugin computation error: {e}")
 def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.Toplevel, waves: dict = {}, progress_label = None):
     global sounds, frequencies, tempo
     notes = sounds[name][2]
@@ -192,9 +203,9 @@ def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.
                     new_tempo = tempos[where]
                     
         if not i[1] in waves.keys():
-            waves[i[1]] = compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), pwindow, progress_label2)
+            waves[i[1]] = apply_plugins(name, sounds[name][4], compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), pwindow, progress_label2))
         else:
-            wave = compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), pwindow, progress_label2)
+            wave = apply_plugins(name, sounds[name][4], compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), pwindow, progress_label2))
             for j in range(int(60 / tempo * frameRate)):
                 waves[i[1]][j] = limit(waves[i[1]][j] + wave[j], 1)
         totalprogress += 1
@@ -230,7 +241,7 @@ def play_sound(name: str):
     waves = {}
     waves = standard_sound_processing(name, progress_label2, pwindow, {}, progress_label)
     pwindow.destroy()
-    play_waves_with_big_buffer(waves)
+    play_waves_with_big_buffer(get_raw_frames(waves))
 
 sounds = {}
 tempo = 60
@@ -265,6 +276,12 @@ def save_config(config_input: tk.Text, name: str):
     config = config_input.get("1.0", "end-1c")
     sounds[name][3] = config
 
+def save_plugin_code(input: tk.Text, name: str):
+    global sounds, saved
+    saved = False
+    config = input.get("1.0", "end-1c")
+    sounds[name][4] = config
+
 def open_sound(name: str, destroy_pwindow: bool = False, pwindow: tk.Toplevel = None): # type: ignore
     sound_window = tk.Toplevel()
     sound_window.wm_title(f"{name}: Absolute CineWave")
@@ -287,7 +304,7 @@ def create_sound(name: str):
     if(current_column >= 3):
         current_column = 0
         current_row += 1
-    sounds[name] = ["", None, [], '']
+    sounds[name] = ["", None, [], '', '']
     new_button = tk.Button(window, text=name, command=partial(open_sound, name)) # type: ignore
     new_button.grid(column=current_column, row=current_row)
 
@@ -310,6 +327,7 @@ def new_sound():
 blue = tk.PhotoImage(file=Path(__file__).parent.absolute().joinpath('blue.png'))
 gray = tk.PhotoImage(file=Path(__file__).parent.absolute().joinpath('gray.png'))
 cog = tk.PhotoImage(file=Path(__file__).parent.absolute().joinpath('cog.png'))
+plugin = tk.PhotoImage(file=Path(__file__).parent.absolute().joinpath('plugin.png'))
 
 def select_note(x: int, y: int, name: str, button: tk.Button):
     global blue, gray, sounds, saved
@@ -361,10 +379,21 @@ def backwards(buttonself: tk.Button, buttons, pwindow: tk.Toplevel, poslabel: tk
 def sound_config(name: str):
     global sounds
     cwindow = tk.Toplevel()
+    cwindow.wm_title(f'{name} options')
     config_input = tk.Text(cwindow, height=6, width=25)
     config_input.pack()
     config_input.insert(tk.END, sounds[name][3])
     save_button = tk.Button(cwindow, text="Save", command=partial(save_config, config_input, name))
+    save_button.pack()
+
+def plugin_config(name: str):
+    global sounds
+    plwindow = tk.Toplevel()
+    plwindow.wm_title(f'{name} plugin code')
+    plugin_input = tk.Text(plwindow, height=25, width=80)
+    plugin_input.insert(tk.END, sounds[name][4])
+    plugin_input.pack()
+    save_button = tk.Button(plwindow, text='Save', command=partial(save_plugin_code, plugin_input, name))
     save_button.pack()
 
 def play_window(name: str):
@@ -396,11 +425,13 @@ def play_window(name: str):
     backwards_button.config(command=partial(backwards, backwards_button, buttons, pwindow, position_label, name))
     
     config_button = tk.Button(pwindow, image=cog, command=partial(sound_config, name))
+    plugins_button = tk.Button(pwindow, image=plugin, command=partial(plugin_config, name))
     
     play_button.grid(row=12, column=0)
     forwards_button.grid(row=12, column=2)
     backwards_button.grid(row=12, column=1)
     config_button.grid(row=12, column=3)
+    plugins_button.grid(row=12, column=4)
     position_label.grid(row=12, column=17)
 
     pwindow.protocol("WM_DELETE_WINDOW", partial(open_sound, name, True, pwindow))
@@ -437,7 +468,7 @@ def play_all():
         pwindow.update()
     pwindow.destroy()
     window.update()
-    play_waves_with_big_buffer(waves)
+    play_waves_with_big_buffer(get_raw_frames(waves))
 
 def export_all():
     global sounds, frequencies, pv, tempo, window

@@ -6,6 +6,7 @@ waveforms = {}
 def sine_wave(freq: float, time: Time, amplitude: float):
     if(amplitude <= 1 and amplitude >= 0):
         return int(round(math.sin(time.seconds() * freq * 2 * math.pi), 8) * (frameMax * amplitude))
+    return 0
 
 def triangle_wave(freq: float, time: Time, amplitude: float):
     if(amplitude <= 1 and amplitude >= 0):
