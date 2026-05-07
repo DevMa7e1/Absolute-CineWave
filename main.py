@@ -11,6 +11,7 @@ from time import sleep
 import wave
 import array
 import dill
+import plibflac
 #For debugging purposes
 #import matplotlib.pyplot as plt
 
@@ -495,24 +496,43 @@ def export_all():
     pwindow.destroy()
     window.update()
     keys = sorted(list(waves.keys()))
-    data = array.array('l')
-    for i in range(len(keys)):
-        for j in waves[keys[i]]:
-            data.append(j)
-        if i < len(keys)-1:
-            for j in range((keys[i+1] - keys[i] - 1) * frameRate):
-                data.append(0)
     filename = tkinter.filedialog.asksaveasfilename(initialdir = "/",
                                           title = "Export audio",
-                                          filetypes = (("WAV audio file",
-                                                        "*.wav"),))
+                                          filetypes = (("FLAC audio file", "*.flac"), ("WAV audio file",
+                                                        "*.wav")))
     if type(filename) != tuple and filename != '':
-        encoder = wave.open(filename, 'wb')
-        encoder.setnchannels(1)
-        encoder.setsampwidth(4)
-        encoder.setframerate(frameRate/2)
-        encoder.writeframes(data)
-        encoder.close()
+        if filename.endswith('.wav'):
+            data = array.array('h')
+            for i in range(len(keys)):
+                for j in waves[keys[i]]:
+                    data.append(j//2**(frameBits-16))
+                if i < len(keys)-1:
+                    for j in range((keys[i+1] - keys[i] - 1) * frameRate):
+                        data.append(0)
+            encoder = wave.open(filename, 'wb')
+            encoder.setnchannels(1)
+            encoder.setsampwidth(4)
+            encoder.setframerate(frameRate/2)
+            encoder.writeframes(data)
+            encoder.close()
+        else:
+            data = array.array('i')
+            for i in range(len(keys)):
+                for j in waves[keys[i]]:
+                    n: int = j//2**(frameBits-32)
+                    data.append(n)
+                if i < len(keys)-1:
+                    for j in range((keys[i+1] - keys[i] - 1) * frameRate):
+                        data.append(0)
+            data = memoryview(data)
+            offset = 0
+            with plibflac.Encoder(filename, channels=1, bits_per_sample=32, sample_rate=frameRate, compression_level=8) as en:
+                while offset*1000 < len(data):
+                    ch0 = data[1000*offset : 1000*(offset+1)]
+                    en.write([ch0])
+                    offset += 1
+                en.close()
+            
 
 def convert_to_type_code(size: int) -> str:
     match size:
