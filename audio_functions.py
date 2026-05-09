@@ -55,9 +55,19 @@ def echo(wave: list, time: Time, difference: Time):
         return 0
 
 def custom(name: str, freq: float, time: Time, amplitude: float):
-    frame = time.pcm_frames() % len(waveforms[name][0])
-    return int(waveforms[name][frame] * amplitude)
+    waveform = waveforms[name]
+    if not f'cobj{freq}' in waveform[1]:
+        audioi = AudioInterpolator(waveform[0], frameRate)
+        audioi.stretch_or_squish_to_length(1/freq)
+        waveform[1][f'cobj{freq}'] = audioi.get()
+    frame = time.pcm_frames() % len(waveform[1][f'cobj{freq}'])
+    return int(waveform[1][f'cobj{freq}'][frame] * amplitude)
 
 def play_custom(name: str, time: Time, amplitude: float, raise_by: int = 0):
-    frame = time.pcm_frames() % len(waveforms[name][0])
-    return waveforms[name][0][frame] * amplitude
+    waveform = waveforms[name]
+    if not f'pcobj{raise_by}' in waveform[1]:
+        audioi = AudioInterpolator(waveform[0], frameRate)
+        audioi.stretch_or_squish(1/raise_by)
+        waveform[1][f'pcobj{raise_by}'] = audioi.get()
+    frame = time.pcm_frames() % len(waveform[1][f'pcobj{raise_by}'])
+    return int(waveform[1][f'pcobj{raise_by}'][frame] * amplitude)

@@ -76,12 +76,12 @@ class AudioInterpolator:
         self.processed_data = None
 
 class AudioData:
-    def __init__(self, data: bytes, frame_width: int) -> None:
+    def __init__(self, data: bytes, frame_width: int, multiply_by: int = 1) -> None:
         native_data = []
         i = 0
         while i * frame_width/8 < len(data):
             raw_frame = int.from_bytes(data[i * frame_width // 8 : (i+1) * frame_width // 8], 'little', signed=True)
-            native_data.append(int(raw_frame // 2**(frame_width-frameBits)))
+            native_data.append(int(raw_frame // 2**(frame_width-frameBits)) * multiply_by)
             i += 1
         self.data = native_data
     def read(self):

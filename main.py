@@ -21,8 +21,8 @@ window.wm_title("Absolute CineWave")
 
 p = pyaudio.PyAudio()
 out = p.open(format=pyaudio.paInt32,
-                channels=1,
-                rate=frameRate*2,
+                channels=2,
+                rate=frameRate,
                 output=True,
                 frames_per_buffer=bufferSize)
 
@@ -115,11 +115,6 @@ def get_raw_frames(waves: dict):
 def play_waves_with_big_buffer(wave: list):
     global frameRate, playing, stopped
     chunk = 0
-    chunks = []
-    while chunk * 20 * frameRate < len(wave):
-        pvchunk = wave[chunk * 20 * frameRate:chunk * 20 * frameRate + min(len(wave)-chunk * 20 * frameRate, 20 * frameRate)]
-        chunks.append(pvchunk)
-        chunk += 1
     controls_window = tk.Toplevel()
     time_label = tk.Label(controls_window, text="Played 0s / 0s")
     pause_play_button = tk.Button(controls_window, text="Pause/Play", command=play_pause)
@@ -134,10 +129,18 @@ def play_waves_with_big_buffer(wave: list):
     total_len = len(wave)
     while len(wave) > 0:
         if len(wave) > bufferSize:
-            chunks.append(bytes(array.array('l', wave[:bufferSize])))
+            pvchunk = []
+            for i in range(bufferSize):
+                pvchunk.append(wave[i])
+                pvchunk.append(wave[i])
+            chunks.append(bytes(array.array('i', pvchunk)))
             wave = wave[bufferSize:]
         else:
-            chunks.append(bytes(array.array('l', wave + [0] * (bufferSize-len(wave)))))
+            pvchunk = []
+            for i in wave:
+                pvchunk.append(i)
+                pvchunk.append(i)
+            chunks.append(bytes(array.array('i', pvchunk + [0] * (bufferSize-len(wave)))))
             wave.clear()
     for i in chunks:
         audio_buffer.append(i)
@@ -535,22 +538,31 @@ def export_all():
 def import_waveform():
     filename = tkinter.filedialog.askopenfilename(initialdir = "/",
                                               title = "Import a custom waveform",
-                                              filetypes = (("WAV file",
-                                                            "*.wav"),))
+                                              filetypes = (("FLAC file", "*.flac"),("WAV file",
+                                                            "*.wav")))
     if type(filename) != tuple and filename != '':
-        decoder = wave.open(filename, 'rb')
-        wfrate = decoder.getframerate()
-        wfwidth = decoder.getsampwidth() * 8
-        wfdata = decoder.readframes(decoder.getnframes())
-        
-        native_data = AudioData(wfdata, wfwidth).read()
-        if decoder.getnchannels() == 2:
-            datat = copy.copy(native_data)
-            native_data.clear()
-            for i in range(0, len(datat)-1, 2):
-                native_data.append((datat[i] + datat[i+1]) // 2)
-        processed_data = AudioInterpolator(native_data, wfrate).get()
-        waveforms[Path(filename).name] = [processed_data]
+        if filename.endswith('.wav'):
+            decoder = wave.open(filename, 'rb')
+            wfrate = decoder.getframerate()
+            wfwidth = decoder.getsampwidth() * 8
+            wfdata = decoder.readframes(decoder.getnframes())
+
+            native_data = AudioData(wfdata, wfwidth).read()
+            if decoder.getnchannels() == 2:
+                datat = copy.copy(native_data)
+                native_data.clear()
+                for i in range(0, len(datat)-1, 2):
+                    native_data.append((datat[i] + datat[i+1]) // 2)
+            processed_data = AudioInterpolator(native_data, wfrate).get()
+            waveforms[Path(filename).name] = [processed_data, {}]
+        else:
+            with plibflac.Decoder(filename) as decoder:
+                wfrate = decoder.sample_rate
+                wfwidth = decoder.bits_per_sample
+                wfdata = decoder.read(decoder.total_samples-1)
+                native_data = AudioData(bytes(wfdata[0]), 32, 2**(32-wfwidth)).read()
+                processed_data = AudioInterpolator(native_data, wfrate).get()
+                waveforms[Path(filename).name] = [processed_data, {}]
 
 def save_project():
     global sounds, tempo, saved
