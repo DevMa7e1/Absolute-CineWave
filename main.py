@@ -12,6 +12,7 @@ import wave
 import array
 import dill
 import plibflac
+import copy
 #For debugging purposes
 #import matplotlib.pyplot as plt
 
@@ -164,7 +165,7 @@ def process_config(text: str):
             config[i.split(':')[0]] = i.split(':')[1]
     return config
 
-def apply_plugins(name: str, code: str, wave: list):
+def apply_plugins(name: str, code: str, wave: list, freq: float):
     for i in code.split("\n"):
         tabs = 0
         matches = re.match("(.*) ->", i)
@@ -204,9 +205,9 @@ def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.
                     new_tempo = tempos[where]
                     
         if not i[1] in waves.keys():
-            waves[i[1]] = apply_plugins(name, sounds[name][4], compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), pwindow, progress_label2))
+            waves[i[1]] = apply_plugins(name, sounds[name][4], compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), pwindow, progress_label2), frequencies[11-i[0]])
         else:
-            wave = apply_plugins(name, sounds[name][4], compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), pwindow, progress_label2))
+            wave = apply_plugins(name, sounds[name][4], compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), pwindow, progress_label2), frequencies[11-i[0]])
             for j in range(int(60 / tempo * frameRate)):
                 waves[i[1]][j] = limit(waves[i[1]][j] + wave[j], 1)
         totalprogress += 1
@@ -339,10 +340,8 @@ def select_note(x: int, y: int, name: str, button: tk.Button):
     else:
         sounds[name][2].append((x, y))
         button.config(image=blue)
-        
 
 letter_notation = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
-frequencies = [261.63, 277.18, 293.66, 311.13, 329.63, 349.23, 369.99, 392, 415.30, 440, 466.16, 493.88]
 
 def forwards(buttonself: tk.Button, buttons, pwindow: tk.Toplevel, poslabel: tk.Label, name: str):
     poslabel.config(text=str(int(poslabel.cget("text"))+1))
@@ -532,19 +531,6 @@ def export_all():
                     en.write([ch0])
                     offset += 1
                 en.close()
-            
-
-def convert_to_type_code(size: int) -> str:
-    match size:
-        case 8:
-            return 'b'
-        case 16:
-            return 'h'
-        case 32:
-            return 'l'
-        case 64:
-            return 'q'
-    return 'l'
 
 def import_waveform():
     filename = tkinter.filedialog.askopenfilename(initialdir = "/",
@@ -556,12 +542,15 @@ def import_waveform():
         wfrate = decoder.getframerate()
         wfwidth = decoder.getsampwidth() * 8
         wfdata = decoder.readframes(decoder.getnframes())
-        if wfwidth == frameBits:
-            native_wfdata = array.array(convert_to_type_code(frameBits), wfdata)
-            waveforms[Path(filename).name] = [wfrate, native_wfdata]
-        else:
-            tkinter.messagebox.showerror('Import error', f'The WAV file you selected has a sample width that differes from the one currently selected \
-for this project ({frameBits}). Please convert your file to a {frameBits} bit WAV file using audio software then try again.')
+        
+        native_data = AudioData(wfdata, wfwidth).read()
+        if decoder.getnchannels() == 2:
+            datat = copy.copy(native_data)
+            native_data.clear()
+            for i in range(0, len(datat)-1, 2):
+                native_data.append((datat[i] + datat[i+1]) // 2)
+        processed_data = AudioInterpolator(native_data, wfrate).get()
+        waveforms[Path(filename).name] = [processed_data]
 
 def save_project():
     global sounds, tempo, saved

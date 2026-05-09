@@ -2,6 +2,7 @@ from extras import *
 import math
 
 waveforms = {}
+frequencies = [261.63, 277.18, 293.66, 311.13, 329.63, 349.23, 369.99, 392, 415.30, 440, 466.16, 493.88]
 
 def sine_wave(freq: float, time: Time, amplitude: float):
     if(amplitude <= 1 and amplitude >= 0):
@@ -54,8 +55,9 @@ def echo(wave: list, time: Time, difference: Time):
         return 0
 
 def custom(name: str, freq: float, time: Time, amplitude: float):
-    progress = (time() / (1/freq)) % 1
-    waveform = waveforms[name][1]
-    progress_frame = math.floor(progress * len(waveform))
-    print(progress_frame, waveform[progress_frame])
-    return int(waveform[progress_frame] * amplitude)
+    frame = time.pcm_frames() % len(waveforms[name][0])
+    return int(waveforms[name][frame] * amplitude)
+
+def play_custom(name: str, time: Time, amplitude: float, raise_by: int = 0):
+    frame = time.pcm_frames() % len(waveforms[name][0])
+    return waveforms[name][0][frame] * amplitude

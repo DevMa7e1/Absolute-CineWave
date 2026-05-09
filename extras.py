@@ -1,4 +1,7 @@
 from typing import Any
+import numpy as np
+from scipy.interpolate import make_interp_spline
+import copy
 
 frameRate = 48000
 frameBits = 32
@@ -49,6 +52,41 @@ class LinearInterpolator:
     def interpolate_negative_to_positive(self, x: int):
         diff = self.end - self.start
         return self.start + int(self.easeOutSine(x/self.frames) * diff)
+
+class AudioInterpolator:
+    def __init__(self, data: list, input_framerate: int = frameRate) -> None:
+        self.processed_data = None
+        self.frame_rate = input_framerate
+        seconds_length = len(data) / self.frame_rate
+        self.seconds = seconds_length
+        self.data = copy.copy(data)
+    def stretch_or_squish(self, factor: float):
+        self.seconds *= factor
+    def stretch_or_squish_to_length(self, seconds_length: float):
+        self.seconds = seconds_length
+    def get(self) -> Any:
+        if self.processed_data != None:
+            return self.processed_data
+        else:
+            x = np.arange(0, self.seconds, self.seconds / len(self.data))
+            spline = make_interp_spline(x, self.data, k=1)
+            self.processed_data = spline(np.arange(0, self.seconds, 1 / frameRate)).astype(int).tolist()
+            return self.processed_data
+    def clear(self):
+        self.processed_data = None
+
+class AudioData:
+    def __init__(self, data: bytes, frame_width: int) -> None:
+        native_data = []
+        i = 0
+        while i * frame_width/8 < len(data):
+            raw_frame = int.from_bytes(data[i * frame_width // 8 : (i+1) * frame_width // 8], 'little', signed=True)
+            native_data.append(int(raw_frame // 2**(frame_width-frameBits)))
+            i += 1
+        self.data = native_data
+    def read(self):
+        return self.data
+
 
 def mod_or_one(a, b):
     if a == b*2:
