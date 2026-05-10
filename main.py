@@ -33,7 +33,8 @@ saved = True
 def compute_sound(name: str, freq: int, frames: int, progress_window: tk.Toplevel, progress_label: tk.Label):
     global sounds
     code = sounds[name][1]
-    wave = []
+    waveR = []
+    waveL = []
     time = Time()
     for i in range(frames):
         if i % 1000 == 0:
@@ -50,7 +51,11 @@ def compute_sound(name: str, freq: int, frames: int, progress_window: tk.Topleve
     #plt.plot(wave)
     #plt.show()
     #input(">")
-    return wave
+    if len(waveL) != len(waveR):
+        tkinter.messagebox.showerror("Computation error", f"The length of sound in the left channel does not match the\
+ one in the right channel! (L: {len(waveL)} vs R: {len(waveR)})")
+        raise Exception("L and R channels don't match in length.")
+    return waveL, waveR
 
 def interpolate_between_notes(frames: int, waves: dict):
     keys = sorted(list(waves.keys()))
@@ -62,7 +67,10 @@ def interpolate_between_notes(frames: int, waves: dict):
             wave1[len(wave1)-j] = int(linear(frames-j))
     return waves
 
-def remove_frames_until_perfect_transition(frames: int, waves: dict):
+def remove_frames_until_perfect_transition(frames: int, waves_up: dict):
+    waves = {}
+    for i in waves_up.keys():
+        waves[i] = waves_up[i][0]
     keys = sorted(list(waves.keys()))
     for i in range(len(keys)-1):
         wave1: list = waves[keys[i]]
@@ -91,7 +99,49 @@ def remove_frames_until_perfect_transition(frames: int, waves: dict):
         index, index2 = len(wave1) - wave1[::-1].index(val1, 0, frames//2), wave2.index(val2, 0, frames//2)
         waves[keys[i]] = waves[keys[i]][:index]
         waves[keys[i+1]] = waves[keys[i+1]][index2:]
-    return waves
+    waves1 = copy.copy(waves)
+    waves = {}
+    for i in waves_up.keys():
+        waves[i] = waves_up[i][1]
+    keys = sorted(list(waves.keys()))
+    for i in range(len(keys)-1):
+        wave1: list = waves[keys[i]]
+        wave2: list = waves[keys[i+1]]
+        wave1sect = sorted(wave1[len(wave1)-frames//2-1:])
+        wave2sect = sorted(wave2[:frames//2])
+        it1, it2 = 0, 0
+        val1, val2 = 0, 0
+        closest = 1000000
+        while(it1 < len(wave1sect) and it2 < len(wave2sect)):
+            if(wave1sect[it1] > wave2sect[it2]):
+                it2 += 1
+                if not (it1 < len(wave1sect) and it2 < len(wave2sect)):
+                    break
+            if(wave1sect[it1] < wave2sect[it2]):
+                it1 += 1
+                if not (it1 < len(wave1sect) and it2 < len(wave2sect)):
+                    break
+            if(wave1sect[it1] == wave2sect[it2]):
+                closest = 0
+                val1, val2 = wave1sect[it1], wave2sect[it2]
+                break
+            if(abs(wave1sect[it1] - wave2sect[it2]) < closest):
+                val1, val2 = wave1sect[it1], wave2sect[it2]
+                closest = abs(wave1sect[it1] - wave2sect[it2])
+        index, index2 = len(wave1) - wave1[::-1].index(val1, 0, frames//2), wave2.index(val2, 0, frames//2)
+        waves[keys[i]] = waves[keys[i]][:index]
+        waves[keys[i+1]] = waves[keys[i+1]][index2:]
+    waves_ret = {}
+    for i in waves_up.keys():
+        if len(waves[i]) < len(waves1[i]):
+            waves[i] += [waves[i][-1]] * (len(waves1[i]) - len(waves[i]))
+        elif len(waves[i]) > len(waves1[i]):
+            waves1[i] += [waves1[i][-1]] * (len(waves[i]) - len(waves1[i]))
+    waves_ret = {}
+    for i in waves_up.keys():
+        waves_ret[i] = (waves1[i], waves[i])
+    return waves_ret
+
 
 playing = True
 stopped = False
@@ -104,15 +154,18 @@ def stop():
     stopped = True
 
 def get_raw_frames(waves: dict):
-    wave = []
+    waveL = []
+    waveR = []
     keys = sorted(list(waves.keys()))
     for i in range(len(keys)):
-        wave += waves[keys[i]]
+        waveL += waves[keys[i]][0]
+        waveR += waves[keys[i]][1]
         if i < len(keys)-1:
-            wave += [wave[-1]] * int(60 / tempo * (keys[i+1] - keys[i] - 1) * frameRate)
-    return wave
+            waveL += [waveL[-1]] * int(60 / tempo * (keys[i+1] - keys[i] - 1) * frameRate)
+            waveR += [waveR[-1]] * int(60 / tempo * (keys[i+1] - keys[i] - 1) * frameRate)
+    return [waveL, waveR]
 
-def play_waves_with_big_buffer(wave: list):
+def play_waves_with_big_buffer(waves: list):
     global frameRate, playing, stopped
     chunk = 0
     controls_window = tk.Toplevel()
@@ -126,22 +179,24 @@ def play_waves_with_big_buffer(wave: list):
     abI = 0
     audio_buffer = []
     chunks = []
-    total_len = len(wave)
-    while len(wave) > 0:
-        if len(wave) > bufferSize:
+    total_len = len(waves[0])
+    while len(waves[0]) > 0:
+        if len(waves[0]) > bufferSize:
             pvchunk = []
             for i in range(bufferSize):
-                pvchunk.append(wave[i])
-                pvchunk.append(wave[i])
+                pvchunk.append(waves[0][i])
+                pvchunk.append(waves[1][i])
             chunks.append(bytes(array.array('i', pvchunk)))
-            wave = wave[bufferSize:]
+            waves[0] = waves[0][bufferSize:]
+            waves[1] = waves[1][bufferSize:]
         else:
             pvchunk = []
-            for i in wave:
-                pvchunk.append(i)
-                pvchunk.append(i)
-            chunks.append(bytes(array.array('i', pvchunk + [0] * (bufferSize-len(wave)))))
-            wave.clear()
+            for i in range(len(waves[0])):
+                pvchunk.append(waves[0][i])
+                pvchunk.append(waves[1][i])
+            chunks.append(bytes(array.array('i', pvchunk + [0] * (bufferSize-len(waves[0])))))
+            waves[0].clear()
+            waves[1].clear()
     for i in chunks:
         audio_buffer.append(i)
     abL = len(chunks)
@@ -168,7 +223,9 @@ def process_config(text: str):
             config[i.split(':')[0]] = i.split(':')[1]
     return config
 
-def apply_plugins(name: str, code: str, wave: list, freq: float):
+def apply_plugins(name: str, code: str, waves: tuple, freq: float):
+    waveL = waves[0]
+    waveR = waves[1]
     for i in code.split("\n"):
         tabs = 0
         matches = re.match("(.*) ->", i)
@@ -177,7 +234,7 @@ def apply_plugins(name: str, code: str, wave: list, freq: float):
             code = code.replace(i, f"{'\t'*tabs}wave.clear()\n{'\t'*tabs}for dutvn in {str(matches[1])}: wave.append(dutvn)")
     try:
         exec(compile(code, f'{name} plugin code', 'exec'))
-        return wave
+        return waveL, waveR
     except Exception as e:
         tkinter.messagebox.showerror('Plugin computation error', str(e))
         raise Exception(f"Plugin computation error: {e}")
@@ -212,7 +269,9 @@ def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.
         else:
             wave = apply_plugins(name, sounds[name][4], compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), pwindow, progress_label2), frequencies[11-i[0]])
             for j in range(int(60 / tempo * frameRate)):
-                waves[i[1]][j] = limit(waves[i[1]][j] + wave[j], 1)
+                waves[i[1]][j][0] = limit(waves[i[1]][j][0] + wave[j][0], 1)
+            for j in range(int(60 / tempo * frameRate)):
+                waves[i[1]][j][1] = limit(waves[i[1]][j][1] + wave[j][1], 1)
         totalprogress += 1
         
         if progress_label:
@@ -222,6 +281,15 @@ def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.
     else:
         frames = frameRate//100
     if 'transition' in config.keys() and config['transition'] == 'interpolate':
+        wavesL = {}
+        wavesR = {}
+        for i in waves.keys():
+            wavesL[i] = waves[i][0]
+            wavesR[i] = waves[i][1]
+        wavesL = interpolate_between_notes(frames, wavesL)
+        wavesR = interpolate_between_notes(frames, wavesR)
+        for i in waves.keys():
+            waves[i] = (wavesL, wavesR)
         waves = interpolate_between_notes(frames, waves)
     elif 'transition' in config.keys() and config['transition'] == 'remove':
         waves = remove_frames_until_perfect_transition(frames, waves)
@@ -258,10 +326,13 @@ def save_code(code_input: tk.Text, name: str, close_window: bool = False, sound_
     code2 = code_input.get("1.0", "end-1c")
     for i in code.split("\n"):
         tabs = 0
-        matches = re.match("(.*) ->", i)
+        matches = re.match("(.*) ->(.)", i)
         if(matches != None and len(matches.groups())):
             tabs = i.count('\t')
-            code = code.replace(i, f"{'\t'*tabs}wave.append({str(matches[1])})")
+            if str(matches[2]) == 'L':
+                code = code.replace(i, f"{'\t'*tabs}waveL.append({str(matches[1])})")
+            if str(matches[2]) == 'R':
+                code = code.replace(i, f"{'\t'*tabs}waveR.append({str(matches[1])})")
     compiled = None
     try:
         compiled = compile(code, name, 'exec')
@@ -504,34 +575,40 @@ def export_all():
                                                         "*.wav")))
     if type(filename) != tuple and filename != '':
         if filename.endswith('.wav'):
-            data = array.array('h')
+            data = array.array('i')
             for i in range(len(keys)):
-                for j in waves[keys[i]]:
-                    data.append(j//2**(frameBits-16))
+                for j in range(len(waves[keys[i]][0])):
+                    data.append(waves[keys[i]][0][j]//2**(frameBits-32))
+                    data.append(waves[keys[i]][1][j]//2**(frameBits-32))
                 if i < len(keys)-1:
                     for j in range((keys[i+1] - keys[i] - 1) * frameRate):
                         data.append(0)
+                        data.append(0)
             encoder = wave.open(filename, 'wb')
-            encoder.setnchannels(1)
+            encoder.setnchannels(2)
             encoder.setsampwidth(4)
-            encoder.setframerate(frameRate/2)
+            encoder.setframerate(frameRate)
             encoder.writeframes(data)
             encoder.close()
         else:
-            data = array.array('i')
+            dataL = array.array('i')
+            dataR = array.array('i')
             for i in range(len(keys)):
-                for j in waves[keys[i]]:
-                    n: int = j//2**(frameBits-32)
-                    data.append(n)
+                for j in range(len(waves[keys[i]][0])):
+                    dataL.append(waves[keys[i]][0][j]//2**(frameBits-32))
+                    dataR.append(waves[keys[i]][1][j]//2**(frameBits-32))
                 if i < len(keys)-1:
                     for j in range((keys[i+1] - keys[i] - 1) * frameRate):
-                        data.append(0)
-            data = memoryview(data)
+                        dataL.append(0)
+                        dataR.append(0)
             offset = 0
-            with plibflac.Encoder(filename, channels=1, bits_per_sample=32, sample_rate=frameRate, compression_level=8) as en:
-                while offset*1000 < len(data):
-                    ch0 = data[1000*offset : 1000*(offset+1)]
-                    en.write([ch0])
+            dataL = memoryview(dataL)
+            dataR = memoryview(dataR)
+            with plibflac.Encoder(filename, channels=2, bits_per_sample=32, sample_rate=frameRate, compression_level=8) as en:
+                while offset*1000 < len(dataL):
+                    ch0 = dataL[1000*offset : 1000*(offset+1)]
+                    ch1 = dataR[1000*offset : 1000*(offset+1)]
+                    en.write([ch0, ch1])
                     offset += 1
                 en.close()
 
