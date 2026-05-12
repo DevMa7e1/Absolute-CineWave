@@ -3,7 +3,6 @@ import tkinter.filedialog
 import tkinter.messagebox
 import pyaudio
 import re
-from audio_functions import *
 from extras import *
 from functools import partial
 from pathlib import Path
@@ -13,6 +12,7 @@ import array
 import dill
 import plibflac
 import copy
+from isolated_internals import *
 #For debugging purposes
 #import matplotlib.pyplot as plt
 
@@ -29,33 +29,6 @@ out = p.open(format=pyaudio.paInt32,
 time = Time()
 
 saved = True
-
-def compute_sound(name: str, freq: int, frames: int, progress_window: tk.Toplevel, progress_label: tk.Label):
-    global sounds
-    code = sounds[name][1]
-    waveR = []
-    waveL = []
-    time = Time()
-    for i in range(frames):
-        if i % 1000 == 0:
-            progress = i / (frames)
-            progress_label.config(text=f"Computing\n[{'='*(int(progress*20)-1)}>{' '*(20-int(progress*20))}]")
-            progress_window.update()
-        try:
-            exec(code)
-        except Exception as e:
-            tkinter.messagebox.showerror("Code execution error", str(e))
-            raise Exception(f"Execution error: {str(e)}")
-        time.increment()
-    #Debugging
-    #plt.plot(wave)
-    #plt.show()
-    #input(">")
-    if len(waveL) != len(waveR):
-        tkinter.messagebox.showerror("Computation error", f"The length of sound in the left channel does not match the\
- one in the right channel! (L: {len(waveL)} vs R: {len(waveR)})")
-        raise Exception("L and R channels don't match in length.")
-    return waveL, waveR
 
 def interpolate_between_notes(frames: int, waves: dict):
     keys = sorted(list(waves.keys()))
@@ -222,22 +195,6 @@ def process_config(text: str):
             i = i.replace(' ', '')
             config[i.split(':')[0]] = i.split(':')[1]
     return config
-
-def apply_plugins(name: str, code: str, waves: tuple, freq: float):
-    waveL = waves[0]
-    waveR = waves[1]
-    for i in code.split("\n"):
-        tabs = 0
-        matches = re.match("(.*) ->", i)
-        if(matches != None and len(matches.groups())) and not i.startswith('#'):
-            tabs = i.count('\t')
-            code = code.replace(i, f"{'\t'*tabs}wave.clear()\n{'\t'*tabs}for dutvn in {str(matches[1])}: wave.append(dutvn)")
-    try:
-        exec(compile(code, f'{name} plugin code', 'exec'))
-        return waveL, waveR
-    except Exception as e:
-        tkinter.messagebox.showerror('Plugin computation error', str(e))
-        raise Exception(f"Plugin computation error: {e}")
 def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.Toplevel, waves: dict = {}, progress_label = None):
     global sounds, frequencies, tempo
     notes = sounds[name][2]
@@ -265,9 +222,9 @@ def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.
                     new_tempo = tempos[where]
                     
         if not i[1] in waves.keys():
-            waves[i[1]] = apply_plugins(name, sounds[name][4], compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), pwindow, progress_label2), frequencies[11-i[0]])
+            waves[i[1]] = apply_plugins(name, sounds[name][4], compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), sounds[name][1], pwindow, progress_label2), frequencies[11-i[0]])
         else:
-            wave = apply_plugins(name, sounds[name][4], compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), pwindow, progress_label2), frequencies[11-i[0]])
+            wave = apply_plugins(name, sounds[name][4], compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), sounds[name][1], pwindow, progress_label2), frequencies[11-i[0]])
             for j in range(int(60 / tempo * frameRate)):
                 waves[i[1]][j][0] = limit(waves[i[1]][j][0] + wave[j][0], 1)
             for j in range(int(60 / tempo * frameRate)):
@@ -355,8 +312,17 @@ def save_config(config_input: tk.Text, name: str):
 def save_plugin_code(input: tk.Text, name: str):
     global sounds, saved
     saved = False
-    config = input.get("1.0", "end-1c")
-    sounds[name][4] = config
+    code = input.get("1.0", "end-1c")
+    for i in code.split("\n"):
+        tabs = 0
+        matches = re.match("(.*) ->(.)", i)
+        if(matches != None and len(matches.groups())):
+            tabs = i.count('\t')
+            if str(matches[2]) == 'L':
+                code = code.replace(i, f"{'\t'*tabs}waveL.clear()\n{'\t'*tabs}for dutvn in {str(matches[1])}: waveL.append(dutvn)")
+            if str(matches[2]) == 'R':
+                code = code.replace(i, f"{'\t'*tabs}waveR.clear()\n{'\t'*tabs}for dutvn in {str(matches[1])}: waveR.append(dutvn)")
+    sounds[name][4] = code
 
 def open_sound(name: str, destroy_pwindow: bool = False, pwindow: tk.Toplevel = None): # type: ignore
     sound_window = tk.Toplevel()
@@ -612,7 +578,7 @@ def export_all():
                     offset += 1
                 en.close()
 
-def import_waveform():
+def import_waveform(wwindow: tk.Toplevel, buttonself: tk.Button, column: int, row: int):
     filename = tkinter.filedialog.askopenfilename(initialdir = "/",
                                               title = "Import a custom waveform",
                                               filetypes = (("FLAC file", "*.flac"),("WAV file",
@@ -627,19 +593,48 @@ def import_waveform():
             native_data = AudioData(wfdata, wfwidth).read()
             if decoder.getnchannels() == 2:
                 datat = copy.copy(native_data)
-                native_data.clear()
+                dataL = []
+                dataR = []
                 for i in range(0, len(datat)-1, 2):
-                    native_data.append((datat[i] + datat[i+1]) // 2)
-            processed_data = AudioInterpolator(native_data, wfrate).get()
-            waveforms[Path(filename).name] = [processed_data, {}]
+                    dataL.append(datat[i])
+                    dataR.append(datat[i+1])
+                processed_dataL = AudioInterpolator(dataL, wfrate).get()
+                processed_dataR = AudioInterpolator(dataR, wfrate).get()
+                waveforms[Path(filename).name] = [(processed_dataL, processed_dataR), {}]
+            else:
+                processed_data = AudioInterpolator(native_data, wfrate).get()
+                waveforms[Path(filename).name] = [(copy.copy(processed_data), copy.copy(processed_data)), {}]
+            column += 1
+            if(column >= 3):
+                column = 0
+                row += 1
+            new_button = tk.Button(wwindow, text=Path(filename).name)
+            new_button.config(command=partial(remove_waveform, Path(filename).name, new_button, wwindow))
+            new_button.grid(column=column, row=row)
+            buttonself.config(command=partial(import_waveform, wwindow, buttonself, column, row))
         else:
             with plibflac.Decoder(filename) as decoder:
                 wfrate = decoder.sample_rate
                 wfwidth = decoder.bits_per_sample
                 wfdata = decoder.read(decoder.total_samples-1)
-                native_data = AudioData(bytes(wfdata[0]), 32, 2**(32-wfwidth)).read()
-                processed_data = AudioInterpolator(native_data, wfrate).get()
-                waveforms[Path(filename).name] = [processed_data, {}]
+                if decoder.channels == 2:
+                    native_dataL = AudioData(bytes(wfdata[0]), 32, 2**(32-wfwidth)).read()
+                    native_dataR = AudioData(bytes(wfdata[1]), 32, 2**(32-wfwidth)).read()
+                    processed_dataL = AudioInterpolator(native_dataL, wfrate).get()
+                    processed_dataR = AudioInterpolator(native_dataR, wfrate).get()
+                    waveforms[Path(filename).name] = [(processed_dataL, processed_dataR), {}]
+                else:
+                    native_data = AudioData(bytes(wfdata[0]), 32, 2**(32-wfwidth)).read()
+                    processed_data = AudioInterpolator(native_data, wfrate).get()
+                    waveforms[Path(filename).name] = [(copy.copy(processed_data), copy.copy(processed_data)), {}]
+            column += 1
+            if(column >= 3):
+                column = 0
+                row += 1
+            new_button = tk.Button(wwindow, text=Path(filename).name)
+            new_button.config(command=partial(remove_waveform, Path(filename).name, new_button, wwindow))
+            new_button.grid(column=column, row=row)
+            buttonself.config(command=partial(import_waveform, wwindow, buttonself, column, row))
 
 def save_project():
     global sounds, tempo, saved
@@ -649,14 +644,14 @@ def save_project():
                                                         "*.acwproj"),))
     if type(filename) != tuple and filename != '':
         file = open(filename, 'wb')
-        dill.dump((sounds, tempo), file)
+        dill.dump((sounds, waveforms, tempo), file)
         file.close()
         saved = True
     else:
         saved = False
 
 def load_project():
-    global sounds, tempo, current_column, current_row, tempo_input, saved
+    global sounds, tempo, current_column, current_row, tempo_input, saved, waveforms
     if not saved:
         answer = tkinter.messagebox.askyesnocancel("Before you load another project...", "Do you want to save your current project?")
         if answer:
@@ -670,7 +665,7 @@ def load_project():
                                                             "*.acwproj"),))
         if type(filename) != tuple and filename != '':
             file = open(filename, 'rb')
-            sounds, tempo = dill.load(file)
+            sounds, waveforms, tempo = dill.load(file)
             file.close()
             for i in sounds.keys():
                 current_column += 1
@@ -693,6 +688,29 @@ def check_if_saved_then_close():
     else:
         window.destroy()
 
+def remove_waveform(name: str, button: tk.Button, wwindow: tk.Toplevel):
+    if tkinter.messagebox.askyesno('Delete waveform', 'Are you sure you want to delete this waveform?'):
+        waveforms.pop(name)
+        button.destroy()
+        wwindow.update()
+
+def waveform_window():
+    wwindow = tk.Toplevel()
+    wwindow.wm_title("Absolute CineWave Waveform Viewer")
+    row = 3
+    column = 0
+    for i in waveforms.keys():
+        new_button = tk.Button(wwindow, text=i)
+        new_button.config(command=partial(remove_waveform, i, new_button, wwindow))
+        column += 1
+        if column >= 3:
+            row += 1
+            column = 0
+        new_button.grid(column=column, row=row)
+    add_waveform_button = tk.Button(wwindow, text="Import")
+    add_waveform_button.config(command=partial(import_waveform, wwindow, add_waveform_button, column, row))
+    add_waveform_button.grid(column=0, row=0)
+
 window.protocol("WM_DELETE_WINDOW", check_if_saved_then_close)
 
 current_row = 4
@@ -711,7 +729,7 @@ export_button = tk.Button(window, text="Export all", command=partial(export_all)
 save_project_button = tk.Button(text="Save project", command=save_project)
 load_project_button = tk.Button(text="Load project", command=load_project)
 
-custom_ = tk.Button(window, command=import_waveform, text="Add waveform")
+custom_ = tk.Button(window, command=waveform_window, text="Waveforms")
 
 spacer = tk.Label(text=" ")
 

@@ -56,18 +56,30 @@ def echo(wave: list, time: Time, difference: Time):
 
 def custom(name: str, freq: float, time: Time, amplitude: float):
     waveform = waveforms[name]
-    if not f'cobj{freq}' in waveform[1]:
-        audioi = AudioInterpolator(waveform[0], frameRate)
+    waveformL = waveform[0][0]
+    waveformR = waveform[0][1]
+    if not f'cobjL{freq}' in waveform[1]:
+        audioi = AudioInterpolator(waveformL, frameRate)
         audioi.stretch_or_squish_to_length(1/freq)
-        waveform[1][f'cobj{freq}'] = audioi.get()
-    frame = time.pcm_frames() % len(waveform[1][f'cobj{freq}'])
-    return int(waveform[1][f'cobj{freq}'][frame] * amplitude)
+        waveform[1][f'cobjL{freq}'] = audioi.get()
+    if not f'cobjR{freq}' in waveform[1]:
+        audioi = AudioInterpolator(waveformR, frameRate)
+        audioi.stretch_or_squish_to_length(1/freq)
+        waveform[1][f'cobjR{freq}'] = audioi.get()
+    frame = time.pcm_frames() % len(waveform[1][f'cobjL{freq}'])
+    return int(waveform[1][f'cobjL{freq}'][frame] * amplitude), int(waveform[1][f'cobjR{freq}'][frame] * amplitude)
 
-def play_custom(name: str, time: Time, amplitude: float, raise_by: int = 0):
+def play_custom(name: str, time: Time, amplitude: float, raise_by: int = 1):
     waveform = waveforms[name]
-    if not f'pcobj{raise_by}' in waveform[1]:
-        audioi = AudioInterpolator(waveform[0], frameRate)
+    waveformL = waveform[0][0]
+    waveformR = waveform[0][1]
+    if not f'pcobjL{raise_by}' in waveform[1].keys():
+        audioi = AudioInterpolator(waveformL, frameRate)
         audioi.stretch_or_squish(1/raise_by)
-        waveform[1][f'pcobj{raise_by}'] = audioi.get()
-    frame = time.pcm_frames() % len(waveform[1][f'pcobj{raise_by}'])
-    return int(waveform[1][f'pcobj{raise_by}'][frame] * amplitude)
+        waveform[1][f'pcobjL{raise_by}'] = audioi.get()
+    if not f'pcobjR{raise_by}' in waveform[1].keys():
+        audioi = AudioInterpolator(waveformR, frameRate)
+        audioi.stretch_or_squish(1/raise_by)
+        waveform[1][f'pcobjR{raise_by}'] = audioi.get()
+    frame = time.pcm_frames() % len(waveform[1][f'pcobjL{raise_by}'])
+    return int(waveform[1][f'pcobjL{raise_by}'][frame] * amplitude), int(waveform[1][f'pcobjR{raise_by}'][frame] * amplitude)
