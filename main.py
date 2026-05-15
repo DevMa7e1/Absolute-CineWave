@@ -13,6 +13,7 @@ import dill
 import plibflac
 import copy
 from isolated_internals import *
+from PIL import Image, ImageTk
 #For debugging purposes
 #import matplotlib.pyplot as plt
 
@@ -140,19 +141,40 @@ def get_raw_frames(waves: dict):
 
 def play_waves_with_big_buffer(waves: list):
     global frameRate, playing, stopped
-    chunk = 0
     controls_window = tk.Toplevel()
     time_label = tk.Label(controls_window, text="Played 0s / 0s")
     pause_play_button = tk.Button(controls_window, text="Pause/Play", command=play_pause)
     stop_button = tk.Button(controls_window, text="Stop", command=stop)
+    start_img = ImageTk.PhotoImage(Image.fromarray(np.zeros((frameRate//400, frameRate//200))))
+    peek_image_label = tk.Label(controls_window, image=start_img)
     time_label.grid(column=0, row=0)
     pause_play_button.grid(column=0, row=1)
     stop_button.grid(column=1, row=1)
+    peek_image_label.grid(row=0, column=2)
     window.update()
     abI = 0
     audio_buffer = []
     chunks = []
     total_len = len(waves[0])
+    images = []
+    pointer = 0
+    img_heigth = 120
+    img_width = 240
+    resolution = 1
+    img_per_sec = frameRate//bufferSize
+    for i in range(len(waves[0]) // (frameRate//img_per_sec)):
+        images.append(np.ndarray((img_heigth, img_width, 3), dtype=np.uint8))
+        for i in range(img_width):
+            val1 = map(waves[0][pointer], int(-frameMax), int(frameMax), 0, img_heigth)
+            for j in range(val1-1):
+                images[-1][j][i] = (2**8-1, 2**8-1, 2**8-1)
+            images[-1][val1][i] = (0, 0, 0)
+            for j in range(val1+1, img_heigth):
+                images[-1][j][i] = (2**8-1, 2**8-1, 2**8-1)
+            pointer += resolution
+        pointer += frameRate//img_per_sec - img_width - 1
+    for i in range(len(images)):
+        images[i] = ImageTk.PhotoImage(Image.fromarray(images[i], mode='RGB'))
     while len(waves[0]) > 0:
         if len(waves[0]) > bufferSize:
             pvchunk = []
@@ -173,10 +195,13 @@ def play_waves_with_big_buffer(waves: list):
     for i in chunks:
         audio_buffer.append(i)
     abL = len(chunks)
+    played_frames = 0
+    frames_per_image = frameRate//img_per_sec
     while abL > abI:
         controls_window.update()
         if playing:
             out.write(audio_buffer[abI])
+            played_frames += bufferSize
         else:
             while not playing:
                 controls_window.update()
@@ -185,6 +210,8 @@ def play_waves_with_big_buffer(waves: list):
             stopped = False
             break
         time_label.config(text=f"Played {round(abI*bufferSize/frameRate, 2)}s / {round(total_len/frameRate, 2)}s")
+        if played_frames//frames_per_image < len(images):
+            peek_image_label.config(image=images[played_frames//frames_per_image])
         abI += 1
     controls_window.destroy()
 
@@ -605,8 +632,8 @@ def import_waveform(wwindow: tk.Toplevel, buttonself: tk.Button, column: int, ro
                 processed_data = AudioInterpolator(native_data, wfrate).get()
                 waveforms[Path(filename).name] = [(copy.copy(processed_data), copy.copy(processed_data)), {}]
             column += 1
-            if(column >= 3):
-                column = 0
+            if(column >= 4):
+                column = 1
                 row += 1
             new_button = tk.Button(wwindow, text=Path(filename).name)
             new_button.config(command=partial(remove_waveform, Path(filename).name, new_button, wwindow))
@@ -628,8 +655,8 @@ def import_waveform(wwindow: tk.Toplevel, buttonself: tk.Button, column: int, ro
                     processed_data = AudioInterpolator(native_data, wfrate).get()
                     waveforms[Path(filename).name] = [(copy.copy(processed_data), copy.copy(processed_data)), {}]
             column += 1
-            if(column >= 3):
-                column = 0
+            if(column >= 4):
+                column = 1
                 row += 1
             new_button = tk.Button(wwindow, text=Path(filename).name)
             new_button.config(command=partial(remove_waveform, Path(filename).name, new_button, wwindow))

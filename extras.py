@@ -6,7 +6,7 @@ import copy
 frameRate = 48000
 frameBits = 32
 frameMax = 2**frameBits / 2 - 1
-bufferSize = 2048*4
+bufferSize = 2048*2
 
 class Time:
     def __init__(self, start_seconds: float = 0, start_pcm_frames: int = 0):
@@ -98,3 +98,5 @@ def safe_division(a: float, b: float):
         return 0
     else:
         return a / b
+def map(x: int, in_min: int, in_max: int, out_min: int, out_max: int):
+    return int((x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min)
