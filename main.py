@@ -139,6 +139,14 @@ def get_raw_frames(waves: dict):
             waveR += [waveR[-1]] * int(60 / tempo * (keys[i+1] - keys[i] - 1) * frameRate)
     return [waveL, waveR]
 
+def show_message(title: str, message: str):
+    msg = tk.Toplevel()
+    msg.wm_title(title)
+    label = tk.Label(msg, text=message)
+    label.pack()
+    window.update()
+    return msg, label
+
 def play_waves_with_big_buffer(waves: list):
     global frameRate, playing, stopped
     controls_window = tk.Toplevel()
@@ -162,20 +170,31 @@ def play_waves_with_big_buffer(waves: list):
     img_width = 240
     resolution = 1
     img_per_sec = frameRate//bufferSize
+    msg, label = show_message("Processing (step 1)", "Generating sound visualizer images...\n0/0\n(shouln't take too long)")
     for i in range(len(waves[0]) // (frameRate//img_per_sec)):
-        images.append(np.ndarray((img_heigth, img_width, 3), dtype=np.uint8))
+        if i % 14 == 0:
+            label.config(text=f"Generating sound visualizer images...\n{i}/{len(waves[0]) // (frameRate//img_per_sec)}\n(shouln't take too long)")
+            msg.update()
+        images.append(np.full((img_heigth, img_width, 3), 2**8-1, dtype=np.uint8))
         for i in range(img_width):
-            val1 = map(waves[0][pointer], int(-frameMax), int(frameMax), 0, img_heigth)
-            for j in range(val1-1):
-                images[-1][j][i] = (2**8-1, 2**8-1, 2**8-1)
-            images[-1][val1][i] = (0, 0, 0)
-            for j in range(val1+1, img_heigth):
-                images[-1][j][i] = (2**8-1, 2**8-1, 2**8-1)
+            val1 = map(waves[0][pointer], int(-frameMax), int(frameMax), 0, img_heigth-1)
+            val2 = map(waves[1][pointer], int(-frameMax), int(frameMax), 0, img_heigth-1)
+            if val1 == val2:
+                images[-1][val1][i] = (2**8-1, 0, 2**8-1)
+            else:
+                images[-1][val1][i] = (2**8-1, 0, 0)
+                images[-1][val2][i] = (0, 0, 2**8-1)
             pointer += resolution
         pointer += frameRate//img_per_sec - img_width - 1
     for i in range(len(images)):
         images[i] = ImageTk.PhotoImage(Image.fromarray(images[i], mode='RGB'))
+    msg.destroy()
+    msg, label = show_message("Processing (step 2)", "Splitting sound into chunks for playback...\nInfinity frames remaining")
+    waves[0] = memoryview(array.array('i', waves[0]))
+    waves[1] = memoryview(array.array('i', waves[1]))
     while len(waves[0]) > 0:
+        label.config(text=f"Splitting sound into chunks for playback...\n{len(waves[0])//bufferSize} frames remaining")
+        msg.update()
         if len(waves[0]) > bufferSize:
             pvchunk = []
             for i in range(bufferSize):
@@ -190,10 +209,11 @@ def play_waves_with_big_buffer(waves: list):
                 pvchunk.append(waves[0][i])
                 pvchunk.append(waves[1][i])
             chunks.append(bytes(array.array('i', pvchunk + [0] * (bufferSize-len(waves[0])))))
-            waves[0].clear()
-            waves[1].clear()
+            waves[0] = []
+            waves[1] = []
     for i in chunks:
         audio_buffer.append(i)
+    msg.destroy()
     abL = len(chunks)
     played_frames = 0
     frames_per_image = frameRate//img_per_sec
@@ -209,7 +229,7 @@ def play_waves_with_big_buffer(waves: list):
         if stopped:
             stopped = False
             break
-        time_label.config(text=f"Played {round(abI*bufferSize/frameRate, 2)}s / {round(total_len/frameRate, 2)}s")
+        time_label.config(text=f"Played {format(round(abI*bufferSize/frameRate, 2), '.2f')}s / {round(total_len/frameRate, 2)}s")
         if played_frames//frames_per_image < len(images):
             peek_image_label.config(image=images[played_frames//frames_per_image])
         abI += 1
@@ -692,7 +712,9 @@ def load_project():
                                                             "*.acwproj"),))
         if type(filename) != tuple and filename != '':
             file = open(filename, 'rb')
-            sounds, waveforms, tempo = dill.load(file)
+            sounds, waveformsT, tempo = dill.load(file)
+            for i in waveformsT.keys():
+                waveforms[i] = waveformsT[i]
             file.close()
             for i in sounds.keys():
                 current_column += 1

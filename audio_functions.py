@@ -1,8 +1,11 @@
 from extras import *
 import math
 
-waveforms = {}
-frequencies = [261.63, 277.18, 293.66, 311.13, 329.63, 349.23, 369.99, 392, 415.30, 440, 466.16, 493.88]
+try:
+    waveforms.keys() #type: ignore
+except:
+    waveforms = {}
+    frequencies = [261.63, 277.18, 293.66, 311.13, 329.63, 349.23, 369.99, 392, 415.30, 440, 466.16, 493.88]
 
 def sine_wave(freq: float, time: Time, amplitude: float):
     if(amplitude <= 1 and amplitude >= 0):
@@ -69,17 +72,17 @@ def custom(name: str, freq: float, time: Time, amplitude: float):
     frame = time.pcm_frames() % len(waveform[1][f'cobjL{freq}'])
     return int(waveform[1][f'cobjL{freq}'][frame] * amplitude), int(waveform[1][f'cobjR{freq}'][frame] * amplitude)
 
-def play_custom(name: str, time: Time, amplitude: float, raise_by: int = 1):
+def play_custom(name: str, time: Time, amplitude: float, speed: int = 1):
     waveform = waveforms[name]
     waveformL = waveform[0][0]
     waveformR = waveform[0][1]
-    if not f'pcobjL{raise_by}' in waveform[1].keys():
+    if not f'pcobjL{speed}' in waveform[1].keys():
         audioi = AudioInterpolator(waveformL, frameRate)
-        audioi.stretch_or_squish(1/raise_by)
-        waveform[1][f'pcobjL{raise_by}'] = audioi.get()
-    if not f'pcobjR{raise_by}' in waveform[1].keys():
+        audioi.stretch_or_squish(1/speed)
+        waveform[1][f'pcobjL{speed}'] = audioi.get()
+    if not f'pcobjR{speed}' in waveform[1].keys():
         audioi = AudioInterpolator(waveformR, frameRate)
-        audioi.stretch_or_squish(1/raise_by)
-        waveform[1][f'pcobjR{raise_by}'] = audioi.get()
-    frame = time.pcm_frames() % len(waveform[1][f'pcobjL{raise_by}'])
-    return int(waveform[1][f'pcobjL{raise_by}'][frame] * amplitude), int(waveform[1][f'pcobjR{raise_by}'][frame] * amplitude)
+        audioi.stretch_or_squish(1/speed)
+        waveform[1][f'pcobjR{speed}'] = audioi.get()
+    frame = time.pcm_frames() % len(waveform[1][f'pcobjL{speed}'])
+    return int(waveform[1][f'pcobjL{speed}'][frame] * amplitude), int(waveform[1][f'pcobjR{speed}'][frame] * amplitude)
