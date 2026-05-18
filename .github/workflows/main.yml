@@ -1,0 +1,65 @@
+name: Build macOS App (py2app)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest  # Apple Silicon (ARM64) runner
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Homebrew dependencies ──────────────────────────────────────────────
+      - name: Install Homebrew dependencies
+        run: |
+          brew update
+          brew install python@3.14 python-tk@3.14 portaudio
+
+      # ── Virtual environment ────────────────────────────────────────────────
+      - name: Create virtual environment
+        run: |
+          /opt/homebrew/opt/python@3.14/bin/python3.14 -m venv .venv
+
+      - name: Install requirements
+        run: |
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install py2app
+        run: |
+          source .venv/bin/activate
+          pip install py2app
+
+      # ── Generate setup.py via py2applet ───────────────────────────────────
+      - name: Generate setup.py
+        run: |
+          source .venv/bin/activate
+          py2applet --make-setup \
+            main.py \
+            audio_functions.py \
+            advanced_audio_functions.py \
+            extras.py \
+            isolated_internals.py \
+            blue.png cog.png gray.png plugin.png
+
+      # ── Build the .app bundle ──────────────────────────────────────────────
+      - name: Build main.app with py2app
+        run: |
+          source .venv/bin/activate
+          python setup.py py2app
+
+      # ── Upload artifact ────────────────────────────────────────────────────
+      - name: Upload main.app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: main-app
+          path: dist/main.app
+          if-no-files-found: error
+          retention-days: 30
