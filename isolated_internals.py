@@ -19,14 +19,17 @@ def compute_sound(name: str, freq: int, frames: int, code, progress_window: tk.T
             messagebox.showerror("Code execution error", str(e))
             raise Exception(f"Execution error: {str(e)}")
         time.increment()
-    #Debugging
-    #plt.plot(wave)
-    #plt.show()
-    #input(">")
+    if len(waveL) > 0:
+        if type(waveL[-1]) != int:
+            messagebox.showerror('Computation error', f'The code for {name} didn\'t output PCM frames of type int.')
     if len(waveL) != len(waveR):
         messagebox.showerror("Computation error", f"The length of sound in the left channel does not match the\
  one in the right channel! (L: {len(waveL)} vs R: {len(waveR)})")
         raise Exception("L and R channels don't match in length.")
+    if len(waveL) != frames:
+        messagebox.showerror('Computation error', f'The code for {name} produced too little or too many \
+PCM frames ({len(waveL)}/{frames}).')
+        raise Exception('To many or too little PCM frames generated.')
     return waveL, waveR
 def apply_plugins(name: str, code: str, waves: tuple, freq: float):
     waveL = waves[0]

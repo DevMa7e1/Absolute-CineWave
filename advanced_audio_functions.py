@@ -1,5 +1,4 @@
 from numpy.fft import fft, ifft
-import matplotlib.pylab as plt
 from audio_functions import limit
 
 class EQ:

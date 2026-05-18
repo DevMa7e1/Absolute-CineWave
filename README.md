@@ -68,6 +68,8 @@ This function returns the value of the PCM frame that was "played" **difference*
 <code>s = sine_wave(freq, time, 0.5)<br>echo(waveL, time, Time(0.25)) + s ->L<br> echo(waveR, time, Time(0.35)) + s ->R</code>
 
 ## 3. Advanced audio functions: the EQ class
+### Note
+I don't recommend using the advanced audio functions equalizer implementation because I still don't fully understand how the EQ is supposed to work and it does not seem to produce the expected results. This is present here only for experimental purposes.
 ### Initializing a new EQ object: 
 **EQ(wave: list)**<br>
 Example plug-in applier code:<br>
@@ -82,3 +84,86 @@ Example plug-in applier code:<br>
 **(no arguments)**<br>
 Example plug-in applier code:<br>
 <code>from advanced_audio_functions import EQ<br>eqL = EQ(waveL)<br>eqR = EQ(waveR)<br>eqL.apply_eq(100, 200, 2)<br>eqR.apply_eq(100, 200, 2)<br>eqL() ->L<br>eqR() ->R</code>
+
+## Extras
+### the Time class
+- #### Initialization
+    You can initialize a Time object without any arguments, but if you wanna give it a value, you can use the arguments **start_seconds** (will automatically convert to PCM frame count) or **start_pcm_frames**.
+
+    **Time(start_seconds: float = 0, start_pcm_frames: int = 0)** (both arguments are optional)
+- #### Calling
+    When a Time object is called, it returns the number of seconds stored inside it. It takes no arguments and returns a float.
+
+    <code>t = Time(1)<br>t() #returns 1</code>
+    #### or
+    <code>t = Time(start_pcm_frames=48000)<br>t() #also returns 1, if frameRate is set to 48000</code>
+- #### pcm_frames()
+    This function returns the PCM frame count stored inside of the Time object
+
+    <code>t = Time(1)<br>t.pcm_frames() #returns 48000 if frameRate is set to 48000</code>
+- #### increment(step: int = 1)
+    This function adds the value of **step** to the PCM frame count stored inside itself. By default it adds 1, thus incrementing the value by 1.
+
+### the BasicInterpolator class (internal)
+- #### Initialization
+    **BasicInterpolator(start_value: int, end_value: int, frames: int)**
+
+    To initialize a BasicInterpolator object, you need to pass a start and end PCM frame value, and the number of frames that you want the interpolator to generate between the values.
+- #### Calling
+    To call the BasicInterpolator object, you need to pass an argument representing the x coordonate of the frame you want the interpolator to return. The range of coordonates is 0 (the start value) - **frames** (the end value).
+
+    **(x: int)**
+    
+    Example code:<br>
+    <code>bi = BasicInterpolator(waveL[0], waveL[99], 100)<br>for i in range(0, 100):<br>&ensp;waveL[i] = bi(i)</code>
+### the AudioInterpolator class
+- #### Note
+    Theoretically, this class is primarily internal, but you could find it useful when making plug-in applier code.
+- #### Initialization
+    **AudioInterpolator(data: list, input_framerate: int = frameRate)**
+
+    The AudioInterpolator object, when used in plug-in applier code, should only really be initialized with only the **data** argument set.
+- #### stretch_or_squish
+    **stretch_or_squish(factor: float)**
+
+    This function multiplies the length of the sound by the **factor** value. Basically, it stretches the audio (when **factor** > 1) or squishes it (when **factor** < 1). In other words, it speeds up or slows down the audio data given. 
+    
+    Keep in mind that **factor** here is inverse to how you'd usually think about it. Passing a **factor** of 2 makes the audio length be 2 times bigger, but it's speed 0.5 (1/**factor**) times bigger. Subsequently, passing a **factor** of 0.5 makes the length 0.5 times bigger, but increases the speed by 2 times.
+
+    The audio function **play_custom()** passes the inverse of the given **speed** argument (1/**speed**) to the AudioInterpolator.
+- #### stretch_or_squish_to_length
+    **stretch_or_squish_to_length(seconds_length: float)**
+    
+    This function makes the length of the audio data be exactly **seconds_length** seconds. This either makes the audio be exactly the same, slower, or quicker.
+- #### get()
+    This function returns the processed audio data.
+- #### clear()
+    This function clears the processed audio data stored inisde of the AudioInterpolator module. This function is useful if you already ran **get()** but want to do another **stretch_or_squish()** on the data inside of the object. Running **get()**, then **stretch_or_squish()**, and then **get()** again without running **clear()** gives you exactly the same result as the first **get()** even though you've ran **stretch_or_squish()**.
+### the AudioData class (internal)
+- #### Initialization
+    **AudioData(data: bytes, frame_width: int, multiply_by: int = 1)**
+    
+    This initializes a new AudioData object which can be used to read PCM audio data from raw bytes. This class is used internally when importing custom waveforms because the libraries used like to return the values as a bytes/memoryview object that is hard to convert directly to a native Python class.
+- #### read()
+    **read()** takes no arguments and it returns the processed audio data as a list.
+### safe_division() (internal)
+**safe_division(a: float, b: float)**
+
+This function divides a by b. If b is 0, it returns 0 to avoid a division by zero exeption.
+
+### map() (internal)
+**map(x: int, in_min: int, in_max: int, out_min: int, out_max: int)**
+
+This function maps a value **x** to the range **out_min** - **out_max**. It is used internally for generating the sound visualizer images. It could be useful when writing sound code, though.
+
+## Isolated internals
+- ### Warning
+    **These are all internal functions. They really are NOT meant to be used in sound or plug-in applier code.**
+### compute_sound()
+**compute_sound(name: str, frequency: int, frames: int, code, progress_window: tkinter.Toplevel, progress_label: tkinter.Label)**
+
+This is the function that takes in code and spits out the waveforms for the left and right channel.
+### apply_plugins()
+**apply_plugins(name: str, code: str, waves: tuple, frequency: float)**
+
+This function takes in the left and right waveforms, the plug-in applier code and spits out the modified left and right waveforms.

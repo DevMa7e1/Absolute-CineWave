@@ -19,10 +19,10 @@ class Time:
         return self._time / frameRate
     def pcm_frames(self):
         return self._time
-    def increment(self, step = 1):
+    def increment(self, step: int = 1):
         self._time += step
 
-class LinearInterpolator:
+class BasicInterpolator:
     def __init__(self, start_value: int, end_value: int, frames: int) -> None:
         self.start = start_value
         self.end = end_value
@@ -87,12 +87,6 @@ class AudioData:
     def read(self):
         return self.data
 
-
-def mod_or_one(a, b):
-    if a == b*2:
-        return frameRate
-    else:
-        return a % (b*2)
 def safe_division(a: float, b: float):
     if(b == 0):
         return 0

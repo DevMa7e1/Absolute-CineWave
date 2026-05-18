@@ -14,8 +14,24 @@ import plibflac
 import copy
 from isolated_internals import *
 from PIL import Image, ImageTk
-#For debugging purposes
-#import matplotlib.pyplot as plt
+
+testa = array.array('i')
+testb = array.array('l')
+testc = array.array('h')
+testd = array.array('b')
+
+arraysize = 'i'
+
+if testa.itemsize != 4:
+    if testb.itemsize == 4:
+        arraysize = 'l'
+    elif testc.itemsize == 4:
+        arraysize = 'h'
+    elif testd.itemsize == 4:
+        arraysize = 'b'
+
+
+del testa, testb, testc, testd
 
 window = tk.Tk()
 window.wm_title("Absolute CineWave")
@@ -36,7 +52,7 @@ def interpolate_between_notes(frames: int, waves: dict):
     for i in range(len(keys)-1):
         wave1 = waves[keys[i]]
         wave2 = waves[keys[i+1]]
-        linear = LinearInterpolator(wave1[len(wave1)-frames], wave2[0], frames)
+        linear = BasicInterpolator(wave1[len(wave1)-frames], wave2[0], frames)
         for j in range(frames, 0, -1):
             wave1[len(wave1)-j] = int(linear(frames-j))
     return waves
@@ -127,10 +143,22 @@ def stop():
     global stopped
     stopped = True
 
-def get_raw_frames(waves: dict):
+def get_raw_frames(waves: dict, pad_start: bool = False, tempos: dict = None): #type: ignore
     waveL = []
     waveR = []
     keys = sorted(list(waves.keys()))
+    if pad_start:
+        if tempos != None:
+            if len(tempos.keys()) > 0:
+                cur_tempo = tempo
+                for i in range(keys[0]):
+                    if i in tempos.keys():
+                        cur_tempo = tempos[i]
+                    waveL += int(60/cur_tempo*frameRate) * [0]
+                    waveR += int(60/cur_tempo*frameRate) * [0]
+        else:
+            waveL += keys[0] * int(60/tempo*frameRate) * [0]
+            waveR += keys[0] * int(60/tempo*frameRate) * [0]
     for i in range(len(keys)):
         waveL += waves[keys[i]][0]
         waveR += waves[keys[i]][1]
@@ -190,8 +218,8 @@ def play_waves_with_big_buffer(waves: list):
         images[i] = ImageTk.PhotoImage(Image.fromarray(images[i], mode='RGB'))
     msg.destroy()
     msg, label = show_message("Processing (step 2)", "Splitting sound into chunks for playback...\nInfinity frames remaining")
-    waves[0] = memoryview(array.array('i', waves[0]))
-    waves[1] = memoryview(array.array('i', waves[1]))
+    waves[0] = memoryview(array.array(arraysize, waves[0]))
+    waves[1] = memoryview(array.array(arraysize, waves[1]))
     while len(waves[0]) > 0:
         label.config(text=f"Splitting sound into chunks for playback...\n{len(waves[0])//bufferSize} frames remaining")
         msg.update()
@@ -200,7 +228,7 @@ def play_waves_with_big_buffer(waves: list):
             for i in range(bufferSize):
                 pvchunk.append(waves[0][i])
                 pvchunk.append(waves[1][i])
-            chunks.append(bytes(array.array('i', pvchunk)))
+            chunks.append(bytes(array.array(arraysize, pvchunk)))
             waves[0] = waves[0][bufferSize:]
             waves[1] = waves[1][bufferSize:]
         else:
@@ -208,7 +236,7 @@ def play_waves_with_big_buffer(waves: list):
             for i in range(len(waves[0])):
                 pvchunk.append(waves[0][i])
                 pvchunk.append(waves[1][i])
-            chunks.append(bytes(array.array('i', pvchunk + [0] * (bufferSize-len(waves[0])))))
+            chunks.append(bytes(array.array(arraysize, pvchunk + [0] * (bufferSize-len(waves[0])))))
             waves[0] = []
             waves[1] = []
     for i in chunks:
@@ -242,8 +270,9 @@ def process_config(text: str):
             i = i.replace(' ', '')
             config[i.split(':')[0]] = i.split(':')[1]
     return config
-def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.Toplevel, waves: dict = {}, progress_label = None):
+def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.Toplevel, progress_label = None):
     global sounds, frequencies, tempo
+    waves = {}
     notes = sounds[name][2]
     config = process_config(sounds[name][3])
     adjusted_tempo = False
@@ -257,7 +286,6 @@ def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.
                 where = int(i.split('>')[0])
                 what = int(i.split('>')[1])
                 tempos[where] = what
-
     totalprogress = 0
     for i in notes:
 
@@ -272,10 +300,11 @@ def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.
             waves[i[1]] = apply_plugins(name, sounds[name][4], compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), sounds[name][1], pwindow, progress_label2), frequencies[11-i[0]])
         else:
             wave = apply_plugins(name, sounds[name][4], compute_sound(name, frequencies[11-i[0]], int(60 / new_tempo * frameRate), sounds[name][1], pwindow, progress_label2), frequencies[11-i[0]])
-            for j in range(int(60 / tempo * frameRate)):
-                waves[i[1]][j][0] = limit(waves[i[1]][j][0] + wave[j][0], 1)
-            for j in range(int(60 / tempo * frameRate)):
-                waves[i[1]][j][1] = limit(waves[i[1]][j][1] + wave[j][1], 1)
+            if len(wave[0]) > len(waves[i[1]][0]):
+                wave, waves[i[1]] = waves[i[1]], wave
+            for j in range(len(wave[0])):
+                waves[i[1]][0][j] = limit(waves[i[1]][0][j] + wave[0][j], 1)
+                waves[i[1]][1][j] = limit(waves[i[1]][1][j] + wave[1][j], 1)
         totalprogress += 1
         
         if progress_label:
@@ -290,11 +319,12 @@ def standard_sound_processing(name: str, progress_label2: tk.Label, pwindow: tk.
         for i in waves.keys():
             wavesL[i] = waves[i][0]
             wavesR[i] = waves[i][1]
+        waves = {}
         wavesL = interpolate_between_notes(frames, wavesL)
         wavesR = interpolate_between_notes(frames, wavesR)
-        for i in waves.keys():
-            waves[i] = (wavesL, wavesR)
-        waves = interpolate_between_notes(frames, waves)
+
+        for i in wavesL.keys():
+            waves[i] = [wavesL[i], wavesR[i]]
     elif 'transition' in config.keys() and config['transition'] == 'remove':
         waves = remove_frames_until_perfect_transition(frames, waves)
     elif 'transition' in config.keys() and config['transition'] == 'none':
@@ -316,7 +346,7 @@ def play_sound(name: str):
     progress_label.config(text="Preparing to compute notes...")
     pwindow.update()
     waves = {}
-    waves = standard_sound_processing(name, progress_label2, pwindow, {}, progress_label)
+    waves = standard_sound_processing(name, progress_label2, pwindow, progress_label)
     pwindow.destroy()
     play_waves_with_big_buffer(get_raw_frames(waves))
 
@@ -542,20 +572,32 @@ def play_all():
     progress_label2 = tk.Label(pwindow)
     progress_label.pack()
     progress_label2.pack()
-    progress_label.config(text="Preparing to compute notes...")
-    waves = {}
+    progress_label.config(text="Computing all sounds...")
     totalprogress = 0
     total = 0
     for i in sounds.keys():
-        total += len(sounds[i][2])
+        total += 1
+    wavedataL = []
+    wavedataR = []
     for name in sounds.keys():
-        waves = standard_sound_processing(name, progress_label2, pwindow, waves)
-        totalprogress += 1
-        progress_label.config(text=f"Computed {totalprogress}/{total}.")
-        pwindow.update()
+        if(len(sounds[name][2]) > 0):
+            waves = standard_sound_processing(name, progress_label2, pwindow)
+            output = get_raw_frames(waves, True)
+            outputL = output[0]
+            outputR = output[1]
+            for i in range(min(len(wavedataL), len(outputL))):
+                wavedataL[i] = limit(outputL[i] + wavedataL[i], 1)
+                wavedataR[i] = limit(outputR[i] + wavedataR[i], 1)
+            if(len(wavedataL) < len(outputL)):
+                for i in range(len(wavedataL), len(outputL)):
+                    wavedataL.append(outputL[i])
+                    wavedataR.append(outputR[i])
+            totalprogress += 1
+            progress_label.config(text=f"Computed {totalprogress}/{total}.")
+            pwindow.update()
     pwindow.destroy()
     window.update()
-    play_waves_with_big_buffer(get_raw_frames(waves))
+    play_waves_with_big_buffer([wavedataL, wavedataR])
 
 def export_all():
     global sounds, frequencies, pv, tempo, window
@@ -567,36 +609,41 @@ def export_all():
     progress_label2 = tk.Label(pwindow)
     progress_label.pack()
     progress_label2.pack()
-    progress_label.config(text="Preparing to compute notes...")
-    waves = {}
+    progress_label.config(text="Computing all sounds...")
     totalprogress = 0
     total = 0
     for i in sounds.keys():
-        total += len(sounds[i][2])
+        total += 1
+    wavedataL = []
+    wavedataR = []
     for name in sounds.keys():
-        window.update()
-        waves = standard_sound_processing(name, progress_label2, pwindow, waves)
-        totalprogress += 1
-        progress_label.config(text=f"Computed {totalprogress}/{total}.")
-        pwindow.update()
+        if(len(sounds[name][2]) > 0):
+            waves = standard_sound_processing(name, progress_label2, pwindow)
+            output = get_raw_frames(waves, True)
+            outputL = output[0]
+            outputR = output[1]
+            for i in range(min(len(wavedataL), len(outputL))):
+                wavedataL[i] = limit(outputL[i] + wavedataL[i], 1)
+                wavedataR[i] = limit(outputR[i] + wavedataR[i], 1)
+            if(len(wavedataL) < len(outputL)):
+                for i in range(len(wavedataL), len(outputL)):
+                    wavedataL.append(outputL[i])
+                    wavedataR.append(outputR[i])
+            totalprogress += 1
+            progress_label.config(text=f"Computed {totalprogress}/{total}.")
+            pwindow.update()
     pwindow.destroy()
     window.update()
-    keys = sorted(list(waves.keys()))
     filename = tkinter.filedialog.asksaveasfilename(initialdir = "/",
                                           title = "Export audio",
                                           filetypes = (("FLAC audio file", "*.flac"), ("WAV audio file",
                                                         "*.wav")))
     if type(filename) != tuple and filename != '':
         if filename.endswith('.wav'):
-            data = array.array('i')
-            for i in range(len(keys)):
-                for j in range(len(waves[keys[i]][0])):
-                    data.append(waves[keys[i]][0][j]//2**(frameBits-32))
-                    data.append(waves[keys[i]][1][j]//2**(frameBits-32))
-                if i < len(keys)-1:
-                    for j in range((keys[i+1] - keys[i] - 1) * frameRate):
-                        data.append(0)
-                        data.append(0)
+            data = array.array(arraysize)
+            for i in range(len(wavedataL)):
+                data.append(wavedataL[i])
+                data.append(wavedataR[i])
             encoder = wave.open(filename, 'wb')
             encoder.setnchannels(2)
             encoder.setsampwidth(4)
@@ -604,25 +651,15 @@ def export_all():
             encoder.writeframes(data)
             encoder.close()
         else:
-            dataL = array.array('i')
-            dataR = array.array('i')
-            for i in range(len(keys)):
-                for j in range(len(waves[keys[i]][0])):
-                    dataL.append(waves[keys[i]][0][j]//2**(frameBits-32))
-                    dataR.append(waves[keys[i]][1][j]//2**(frameBits-32))
-                if i < len(keys)-1:
-                    for j in range((keys[i+1] - keys[i] - 1) * frameRate):
-                        dataL.append(0)
-                        dataR.append(0)
-            offset = 0
+            dataL = array.array(arraysize)
+            dataR = array.array(arraysize)
+            for i in range(len(wavedataL)):
+                dataL.append(wavedataL[i])
+                dataR.append(wavedataR[i])
             dataL = memoryview(dataL)
             dataR = memoryview(dataR)
-            with plibflac.Encoder(filename, channels=2, bits_per_sample=32, sample_rate=frameRate, compression_level=8) as en:
-                while offset*1000 < len(dataL):
-                    ch0 = dataL[1000*offset : 1000*(offset+1)]
-                    ch1 = dataR[1000*offset : 1000*(offset+1)]
-                    en.write([ch0, ch1])
-                    offset += 1
+            with plibflac.Encoder(filename, channels=2, bits_per_sample=32, sample_rate=frameRate, compression_level=5, total_samples_estimate=len(dataL)) as en:
+                en.write([dataL, dataR])
                 en.close()
 
 def import_waveform(wwindow: tk.Toplevel, buttonself: tk.Button, column: int, row: int):
