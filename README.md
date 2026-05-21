@@ -9,11 +9,21 @@ Basically, Absolute CineWave handles the boring and tedious parts (sound computa
 
 ## Why did I make this?
 Absolute CineWave started out as a random thought. I had recently learned that you can directly manipulate PCM frames using Python and I was wondering if I could make some sort of application which you can use to create sounds by writing code.
+## Builds' download links
+### Windows 10 & 11 (64-bit)
+[Download the ZIP here](https://github.com/DevMa7e1/Absolute-CineWave/releases/download/v1.0.0/Absolute-CineWave_Windows_x86-64.zip)
+### Linux (64-bit)
+[Download the ZIP here](https://github.com/DevMa7e1/Absolute-CineWave/releases/download/v1.0.0/Absolute-CineWave_Linux_x86-64.zip)
+### MacOS
+* #### Intel based devices (x86_64)
+    [Download the zipped app here](https://github.com/DevMa7e1/Absolute-CineWave/releases/download/v1.0.0/Absolute-CineWave_MacOS_x86-64.zip)
+* #### newer, ARM based devices (arm64)
+    [Download zipped app here](https://github.com/DevMa7e1/Absolute-CineWave/releases/download/v1.0.0/Absolute-CineWave_MacOS_arm64.zip)
 ## How do you run the binaries?
 ### Linux
-You can run the ELF binary through the terminal or by just double-clicking it.
+After unzipping, you can run the ELF binary through the terminal or by just double-clicking it.
 ### Windows
-After downloading the exe file, you're going to have to right click it and open its properties. In the properties window, click on the checkmark next to Unblock and hit Ok. Now, you can run the software by just double-clicking the exe.
+After unzipping the archive which contains the Windows build, you're going to have to right click and open the executable file's properties. In the properties window, click on the checkmark next to Unblock and hit Ok. Now, you can run the software by just double-clicking the exe.
 ### MacOS
 After unzipping the app file, you can run the software by right clicking on the app file and selecting Open. A pop up will appear on which you're going to have to click on Open. Afterwards, you should be able to open the app file by just double-clicking on it.
 
