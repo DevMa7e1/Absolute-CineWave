@@ -58,79 +58,82 @@ def interpolate_between_notes(frames: int, waves: dict):
     return waves
 
 def remove_frames_until_perfect_transition(frames: int, waves_up: dict):
-    waves = {}
-    for i in waves_up.keys():
-        waves[i] = waves_up[i][0]
-    keys = sorted(list(waves.keys()))
-    for i in range(len(keys)-1):
-        wave1: list = waves[keys[i]]
-        wave2: list = waves[keys[i+1]]
-        wave1sect = sorted(wave1[len(wave1)-frames//2-1:])
-        wave2sect = sorted(wave2[:frames//2])
-        it1, it2 = 0, 0
-        val1, val2 = 0, 0
-        closest = 1000000
-        while(it1 < len(wave1sect) and it2 < len(wave2sect)):
-            if(wave1sect[it1] > wave2sect[it2]):
-                it2 += 1
-                if not (it1 < len(wave1sect) and it2 < len(wave2sect)):
+    try:
+        waves = {}
+        for i in waves_up.keys():
+            waves[i] = waves_up[i][0]
+        keys = sorted(list(waves.keys()))
+        for i in range(len(keys)-1):
+            wave1: list = waves[keys[i]]
+            wave2: list = waves[keys[i+1]]
+            wave1sect = sorted(wave1[len(wave1)-frames//2-1:])
+            wave2sect = sorted(wave2[:frames//2])
+            it1, it2 = 0, 0
+            val1, val2 = 0, 0
+            closest = 1000000
+            while(it1 < len(wave1sect) and it2 < len(wave2sect)):
+                if(wave1sect[it1] > wave2sect[it2]):
+                    it2 += 1
+                    if not (it1 < len(wave1sect) and it2 < len(wave2sect)):
+                        break
+                if(wave1sect[it1] < wave2sect[it2]):
+                    it1 += 1
+                    if not (it1 < len(wave1sect) and it2 < len(wave2sect)):
+                        break
+                if(wave1sect[it1] == wave2sect[it2]):
+                    closest = 0
+                    val1, val2 = wave1sect[it1], wave2sect[it2]
                     break
-            if(wave1sect[it1] < wave2sect[it2]):
-                it1 += 1
-                if not (it1 < len(wave1sect) and it2 < len(wave2sect)):
+                if(abs(wave1sect[it1] - wave2sect[it2]) < closest):
+                    val1, val2 = wave1sect[it1], wave2sect[it2]
+                    closest = abs(wave1sect[it1] - wave2sect[it2])
+            index, index2 = len(wave1) - wave1[::-1].index(val1), wave2.index(val2)
+            waves[keys[i]] = waves[keys[i]][:index]
+            waves[keys[i+1]] = waves[keys[i+1]][index2:]
+        waves1 = copy.copy(waves)
+        waves = {}
+        for i in waves_up.keys():
+            waves[i] = waves_up[i][1]
+        keys = sorted(list(waves.keys()))
+        for i in range(len(keys)-1):
+            wave1: list = waves[keys[i]]
+            wave2: list = waves[keys[i+1]]
+            wave1sect = sorted(wave1[len(wave1)-frames//2-1:])
+            wave2sect = sorted(wave2[:frames//2])
+            it1, it2 = 0, 0
+            val1, val2 = 0, 0
+            closest = 1000000
+            while(it1 < len(wave1sect) and it2 < len(wave2sect)):
+                if(wave1sect[it1] > wave2sect[it2]):
+                    it2 += 1
+                    if not (it1 < len(wave1sect) and it2 < len(wave2sect)):
+                        break
+                if(wave1sect[it1] < wave2sect[it2]):
+                    it1 += 1
+                    if not (it1 < len(wave1sect) and it2 < len(wave2sect)):
+                        break
+                if(wave1sect[it1] == wave2sect[it2]):
+                    closest = 0
+                    val1, val2 = wave1sect[it1], wave2sect[it2]
                     break
-            if(wave1sect[it1] == wave2sect[it2]):
-                closest = 0
-                val1, val2 = wave1sect[it1], wave2sect[it2]
-                break
-            if(abs(wave1sect[it1] - wave2sect[it2]) < closest):
-                val1, val2 = wave1sect[it1], wave2sect[it2]
-                closest = abs(wave1sect[it1] - wave2sect[it2])
-        index, index2 = len(wave1) - wave1[::-1].index(val1, 0, frames//2), wave2.index(val2, 0, frames//2)
-        waves[keys[i]] = waves[keys[i]][:index]
-        waves[keys[i+1]] = waves[keys[i+1]][index2:]
-    waves1 = copy.copy(waves)
-    waves = {}
-    for i in waves_up.keys():
-        waves[i] = waves_up[i][1]
-    keys = sorted(list(waves.keys()))
-    for i in range(len(keys)-1):
-        wave1: list = waves[keys[i]]
-        wave2: list = waves[keys[i+1]]
-        wave1sect = sorted(wave1[len(wave1)-frames//2-1:])
-        wave2sect = sorted(wave2[:frames//2])
-        it1, it2 = 0, 0
-        val1, val2 = 0, 0
-        closest = 1000000
-        while(it1 < len(wave1sect) and it2 < len(wave2sect)):
-            if(wave1sect[it1] > wave2sect[it2]):
-                it2 += 1
-                if not (it1 < len(wave1sect) and it2 < len(wave2sect)):
-                    break
-            if(wave1sect[it1] < wave2sect[it2]):
-                it1 += 1
-                if not (it1 < len(wave1sect) and it2 < len(wave2sect)):
-                    break
-            if(wave1sect[it1] == wave2sect[it2]):
-                closest = 0
-                val1, val2 = wave1sect[it1], wave2sect[it2]
-                break
-            if(abs(wave1sect[it1] - wave2sect[it2]) < closest):
-                val1, val2 = wave1sect[it1], wave2sect[it2]
-                closest = abs(wave1sect[it1] - wave2sect[it2])
-        index, index2 = len(wave1) - wave1[::-1].index(val1, 0, frames//2), wave2.index(val2, 0, frames//2)
-        waves[keys[i]] = waves[keys[i]][:index]
-        waves[keys[i+1]] = waves[keys[i+1]][index2:]
-    waves_ret = {}
-    for i in waves_up.keys():
-        if len(waves[i]) < len(waves1[i]):
-            waves[i] += [waves[i][-1]] * (len(waves1[i]) - len(waves[i]))
-        elif len(waves[i]) > len(waves1[i]):
-            waves1[i] += [waves1[i][-1]] * (len(waves[i]) - len(waves1[i]))
-    waves_ret = {}
-    for i in waves_up.keys():
-        waves_ret[i] = (waves1[i], waves[i])
-    return waves_ret
+                if(abs(wave1sect[it1] - wave2sect[it2]) < closest):
+                    val1, val2 = wave1sect[it1], wave2sect[it2]
+                    closest = abs(wave1sect[it1] - wave2sect[it2])
+            index, index2 = len(wave1) - wave1[::-1].index(val1), wave2.index(val2)
+            waves[keys[i]] = waves[keys[i]][:index]
+            waves[keys[i+1]] = waves[keys[i+1]][index2:]
+        waves_ret = {}
+        for i in waves_up.keys():
+            if len(waves[i]) < len(waves1[i]):
+                waves[i] += [waves[i][-1]] * (len(waves1[i]) - len(waves[i]))
+            elif len(waves[i]) > len(waves1[i]):
+                waves1[i] += [waves1[i][-1]] * (len(waves[i]) - len(waves1[i]))
+        waves_ret = {}
+        for i in waves_up.keys():
+            waves_ret[i] = (waves1[i], waves[i])
+        return waves_ret
+    except:
+        return waves_up
 
 
 playing = True
@@ -177,6 +180,8 @@ def show_message(title: str, message: str):
 
 def play_waves_with_big_buffer(waves: list):
     global frameRate, playing, stopped
+    playing = True
+    stopped = False
     controls_window = tk.Toplevel()
     time_label = tk.Label(controls_window, text="Played 0s / 0s")
     pause_play_button = tk.Button(controls_window, text="Pause/Play", command=play_pause)

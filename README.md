@@ -263,7 +263,7 @@ Sets the amount of time that will be atributed to transitioning between notes.
 
 # How to make the binary
 ## Linux
-1. `sudo apt install git python3-full portaudio` (adjust per your distro)
+1. `sudo apt install git python3-full portaudio19-dev` (adjust per your distro)
 2. `git clone https://github.com/DevMa7e1/Absolute-CineWave`
 3. `cd Absolute-CineWave`
 4. `python3 -m venv venv`
