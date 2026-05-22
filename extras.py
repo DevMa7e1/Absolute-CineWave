@@ -68,7 +68,7 @@ class AudioInterpolator:
         if self.processed_data != None:
             return self.processed_data
         else:
-            x = np.arange(0, self.seconds, self.seconds / len(self.data))
+            x = np.arange(0, self.seconds - (self.seconds / len(self.data) / 2), self.seconds / len(self.data))
             spline = make_interp_spline(x, self.data, k=1)
             self.processed_data = spline(np.arange(0, self.seconds, 1 / frameRate)).astype(int).tolist()
             return self.processed_data

@@ -280,9 +280,9 @@ Sets the amount of time that will be atributed to transitioning between notes.
 5. Hit right click, press Open in Terminal
 7. Make sure that you are using cmd by running the command `cmd`
 6. Run the command `py -m venv venv` or, if that results in an error, try `python3 -m venv venv`
-7. Run the command `./venv/Scripts/activate`
+7. Run the command `.\venv\Scripts\activate`
 8. Run the command `pip install -r requirements.txt` and `pip install pyinstaller`
-9. Run the command `python -m PyInstaller -F -n AbsoluteCineWave --add-data blue.png:. --add-data cog.png:. --add-data gray.png:. --add-data plugin.png:. --add-data advanced_audio_functions.py:. main.py -noconsole`
+9. Run the command `python -m PyInstaller -F -n AbsoluteCineWave --add-data blue.png:. --add-data cog.png:. --add-data gray.png:. --add-data plugin.png:. --add-data advanced_audio_functions.py:. main.py --noconsole`
 
 ## MacOS
 1. Make sure you have Homebrew installed
