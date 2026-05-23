@@ -2,6 +2,7 @@
 <img width="400" alt="image" src="https://github.com/user-attachments/assets/63f80551-f4f7-4103-a859-d74513e54b1d" />
 <p style="font-size: 18px">Generate sounds by writing code!</p>
 
+#### Video demo -> https://youtu.be/X3rgO-JclbM
 ## What is this?
 Absolute CineWave is a programmable sound generator. It gives you a simple to use interface for generating sounds by writing Python code. 
 
